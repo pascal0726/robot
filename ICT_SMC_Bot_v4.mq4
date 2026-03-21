@@ -24,27 +24,30 @@ input int    Trail_Pips           = 50;
 input int    EMA_Fast             = 50;
 input int    EMA_Slow             = 200;
 // --- Signal ICT/SMC ---
-input int    OB_Lookback          = 50;   // FIX: 25->50 (couvre ~12h en M15)
-input int    FVG_MinPips          = 5;    // FIX: 8->5 (plus de FVGs detectes)
-input int    OB_TouchPips         = 30;   // FIX: 20->30 (Gold bouge vite)
-input int    ConfidenceMin        = 60;
+input int    OB_Lookback          = 50;
+input int    FVG_MinPips          = 5;
+input int    OB_TouchPips         = 30;
+input int    ConfidenceMin        = 45;   // FIX: 60->45 (plus de trades)
 input int    SwingLookback        = 5;
-// --- Sessions GMT (BrokerGMT=2 → heure broker = GMT+2) ---
-// ICT Kill Zones en heure broker: 7-11h | 12-16h | 16-18h
+// --- Filtres optionnels (desactiver pour tester) ---
+input bool   UseKillZone          = false;  // FIX: false par defaut (evite blocage backtest)
+input bool   UseMultiTF           = false;  // FIX: false = seulement M15 (backtest multi-TF bugue)
+input bool   RequireOB            = true;   // FIX: OB requis ou non
+// --- Sessions GMT ---
 input int    BrokerGMT            = 2;
-input int    LondonStart          = 5;   // GMT → broker 7h  (London open KZ)
-input int    LondonEnd            = 9;   // GMT → broker 11h
-input int    NewYorkStart         = 10;  // GMT → broker 12h (NY open KZ)
-input int    NewYorkEnd           = 14;  // GMT → broker 16h
-input int    NYPMStart            = 14;  // GMT → broker 16h (NY PM KZ)
-input int    NYPMEnd              = 16;  // GMT → broker 18h
+input int    LondonStart          = 5;
+input int    LondonEnd            = 9;
+input int    NewYorkStart         = 10;
+input int    NewYorkEnd           = 14;
+input int    NYPMStart            = 14;
+input int    NYPMEnd              = 16;
 // --- Filtres ---
 input int    SpreadMax            = 200;
 input int    MinTimeBetweenTrades = 30;
 input int    MaxConsecutiveLosses = 3;
 input int    ATR_Period           = 14;
 input double ATR_MaxMultiplier    = 2.0;
-input int    GapProtect_Pips      = 150;  // FIX: Gold pip=0.10 → 150 pips = $15
+input int    GapProtect_Pips      = 150;
 input int    MagicNumber          = 202504;
 input string TradeComment         = "ICT_v4";
 
@@ -60,8 +63,13 @@ string   g_Debug             = "";
 
 struct Signal { string direction; double entry, sl, tp; int confidence; };
 
-// FIX: Digits==2 = Gold/Silver (XAUUSD Digits=2, Point=0.01 → pip=0.10)
-double GetPip() { return (Digits == 5 || Digits == 3 || Digits == 2) ? Point * 10.0 : Point; }
+// FIX: Digits==2 = Gold/Silver, Digits==3 = JPY cross
+double GetPip()
+{
+   if(Digits == 5 || Digits == 3) return Point * 10.0;
+   if(Digits == 2)                return Point * 10.0; // XAU: Point=0.01, pip=0.10
+   return Point;
+}
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -72,10 +80,8 @@ int OnInit()
    g_ConsecutiveLosses = 0;
    g_LastClosedTicket  = -1;
    Print("=== ICT/SMC Bot v4.0 demarre ===");
-   Print("BrokerGMT: GMT+", BrokerGMT,
-         " | London KZ: ", LondonStart, "-", LondonEnd, "h GMT (broker ", LondonStart+BrokerGMT, "-", LondonEnd+BrokerGMT, "h)",
-         " | NY KZ: ", NewYorkStart, "-", NewYorkEnd, "h GMT (broker ", NewYorkStart+BrokerGMT, "-", NewYorkEnd+BrokerGMT, "h)",
-         " | NYPM KZ: ", NYPMStart, "-", NYPMEnd, "h GMT (broker ", NYPMStart+BrokerGMT, "-", NYPMEnd+BrokerGMT, "h)");
+   Print("UseKillZone:", UseKillZone, " | UseMultiTF:", UseMultiTF, " | RequireOB:", RequireOB);
+   Print("ConfidenceMin:", ConfidenceMin, " | SL:", SL_Pips, " TP:", TP_Pips);
    return INIT_SUCCEEDED;
 }
 
@@ -95,7 +101,7 @@ void OnTick()
    Signal sig;
    GenerateSignal(sig);
 
-   bool inKZ      = IsInKillZone();
+   bool inKZ      = UseKillZone ? IsInKillZone() : true;  // FIX: si UseKillZone=false, toujours OK
    bool spreadOK  = SpreadOK();
    bool atrOK     = ATR_OK();
    bool gapOK     = GapOK(sig.direction);
@@ -107,10 +113,10 @@ void OnTick()
    Comment(
       "=== ICT/SMC Bot v4.0 ===\n",
       "Broker: ", dt.hour, "h", dt.min, " | GMT: ", gmtH, "h\n",
-      "D1 EMA : ", GetEMATrend(PERIOD_D1), "\n",
-      "H4 EMA : ", GetEMATrend(PERIOD_H4), "\n",
-      "H1 Swing: ", GetSwingBias(PERIOD_H1), "\n",
-      "KZ: ", (inKZ?"OUI":"NON"),
+      "M15 EMA: ", GetEMATrend(PERIOD_M15), "\n",
+      UseMultiTF ? ("D1 EMA : " + GetEMATrend(PERIOD_D1) + "\n") : "",
+      UseMultiTF ? ("H4 EMA : " + GetEMATrend(PERIOD_H4) + "\n") : "",
+      "KZ: ", (inKZ?"OUI":"NON"), " [", UseKillZone?"actif":"desactive", "]",
       " | Spread: ", (int)MarketInfo(Symbol(),MODE_SPREAD), "/", SpreadMax,
       " | ATR: ", (atrOK?"OK":"HAUT"),
       " | Gap: ", (gapOK?"OK":"TROP GRAND"), "\n",
@@ -134,7 +140,7 @@ void OnTick()
 // ====================== ATR FILTER ======================
 bool ATR_OK()
 {
-   double atrCur = iATR(Symbol(), PERIOD_M15, ATR_Period, 1); // bar 1 = derniere bougie fermee
+   double atrCur = iATR(Symbol(), PERIOD_M15, ATR_Period, 1);
    double atrAvg = 0;
    for(int i=2; i<=21; i++) atrAvg += iATR(Symbol(), PERIOD_M15, ATR_Period, i);
    atrAvg /= 20.0;
@@ -143,18 +149,17 @@ bool ATR_OK()
 }
 
 // ====================== GAP PROTECTION ======================
-// FIX: prend la direction en parametre pour comparer Ask ou Bid
 bool GapOK(string direction)
 {
    double pip  = GetPip();
    double open = iOpen(Symbol(), PERIOD_M15, 0);
    double move;
    if(direction == "BUY")
-      move = Ask - open;          // pour BUY, mouvement haussier depuis open
+      move = Ask - open;
    else if(direction == "SELL")
-      move = open - Bid;          // pour SELL, mouvement baissier depuis open
+      move = open - Bid;
    else
-      move = MathAbs(Ask - open); // pas encore de direction: check general
+      move = MathAbs(Ask - open);
    if(move < 0) move = 0;
    return (move <= GapProtect_Pips * pip);
 }
@@ -165,7 +170,6 @@ string GetEMATrend(int tf)
    double fast  = iMA(Symbol(), tf, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    double slow  = iMA(Symbol(), tf, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
    double price = iClose(Symbol(), tf, 1);
-   // FIX: verification donnees disponibles
    if(fast <= 0 || slow <= 0) return "NEUTRE";
    if(fast > slow && price > fast) return "BUY";
    if(fast < slow && price < fast) return "SELL";
@@ -212,41 +216,78 @@ void GenerateSignal(Signal &sig)
 {
    sig.direction="NONE"; sig.confidence=0; g_Debug="";
 
-   // FIX: verification que les donnees EMA sont chargees avant tout
-   double emaTestD1 = iMA(Symbol(), PERIOD_D1, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
-   double emaTestH4 = iMA(Symbol(), PERIOD_H4, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
-   if(emaTestD1 <= 0 || emaTestH4 <= 0)
+   string bias = "NEUTRE";
+
+   if(UseMultiTF)
    {
-      g_Debug += "-> STOP: Donnees EMA manquantes\n";
-      g_Debug += "   Ouvre les charts D1 et H4 et charge l historique!\n";
-      return;
+      // FIX: verification que les donnees EMA sont chargees
+      double emaTestD1 = iMA(Symbol(), PERIOD_D1, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
+      double emaTestH4 = iMA(Symbol(), PERIOD_H4, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
+
+      if(emaTestD1 <= 0 || emaTestH4 <= 0)
+      {
+         // FIX: si D1 indispo, utilise H4 seulement
+         g_Debug += "-> D1 manquant, utilise H4 uniquement\n";
+         if(emaTestH4 <= 0)
+         {
+            g_Debug += "-> STOP: Donnees H4 EMA manquantes\n";
+            return;
+         }
+         string h4T = GetEMATrend(PERIOD_H4);
+         string h4B = TrendBase(h4T);
+         g_Debug += "H4: " + h4T + "\n";
+         if(h4B == "NEUTRE") { g_Debug+="-> STOP: H4 neutre\n"; return; }
+         sig.confidence += 30;
+         bias = h4B;
+      }
+      else
+      {
+         string d1T = GetEMATrend(PERIOD_D1);
+         string d1B = TrendBase(d1T);
+         g_Debug += "D1: " + d1T + "\n";
+         if(d1B=="NEUTRE") { g_Debug+="-> STOP: D1 neutre\n"; return; }
+         sig.confidence += (d1T==d1B) ? 35 : 20;
+
+         string h4T = GetEMATrend(PERIOD_H4);
+         string h4B = TrendBase(h4T);
+         g_Debug += "H4: " + h4T + "\n";
+         if(h4B!="NEUTRE" && h4B!=d1B) { g_Debug+="-> STOP: H4 oppose D1\n"; return; }
+         sig.confidence += (h4B==d1B) ? 25 : 10;
+
+         string h1B = GetSwingBias(PERIOD_H1);
+         g_Debug += "H1: " + h1B + "\n";
+         if(h1B!="NEUTRE" && h1B!=d1B) { g_Debug+="-> STOP: H1 oppose D1\n"; return; }
+         if(h1B==d1B) sig.confidence += 15;
+
+         bias = d1B;
+      }
+   }
+   else
+   {
+      // FIX: MODE SIMPLE - seulement M15 EMA (fonctionne toujours en backtest)
+      string m15T = GetEMATrend(PERIOD_M15);
+      string m15B = TrendBase(m15T);
+      g_Debug += "M15: " + m15T + "\n";
+      if(m15B == "NEUTRE") { g_Debug+="-> STOP: M15 neutre\n"; return; }
+      sig.confidence += (m15T==m15B) ? 40 : 25;
+
+      // H1 swing comme confirmation supplementaire
+      string h1B = GetSwingBias(PERIOD_H1);
+      g_Debug += "H1: " + h1B + "\n";
+      if(h1B!="NEUTRE" && h1B!=m15B) { g_Debug+="-> STOP: H1 oppose M15\n"; return; }
+      if(h1B==m15B) sig.confidence += 20;
+
+      bias = m15B;
    }
 
-   string d1T = GetEMATrend(PERIOD_D1);
-   string d1B = TrendBase(d1T);
-   g_Debug += "D1: " + d1T + "\n";
-   if(d1B=="NEUTRE") { g_Debug+="-> STOP: D1 neutre\n"; return; }
-   sig.confidence += (d1T==d1B) ? 35 : 20;
-
-   string h4T = GetEMATrend(PERIOD_H4);
-   string h4B = TrendBase(h4T);
-   g_Debug += "H4: " + h4T + "\n";
-   if(h4B!="NEUTRE" && h4B!=d1B) { g_Debug+="-> STOP: H4 oppose D1\n"; return; }
-   sig.confidence += (h4B==d1B) ? 25 : 10;
-
-   string h1B = GetSwingBias(PERIOD_H1);
-   g_Debug += "H1: " + h1B + "\n";
-   if(h1B!="NEUTRE" && h1B!=d1B) { g_Debug+="-> STOP: H1 oppose D1\n"; return; }
-   if(h1B==d1B) sig.confidence += 15;
-
-   string bias = d1B;
-
+   // Order Block (optionnel)
    double obTop=0, obBot=0;
    bool obFound = FindOrderBlock(obTop, obBot, bias, PERIOD_M15);
    g_Debug += "OB: " + (obFound?"OUI":"NON") + "\n";
-   if(!obFound) { g_Debug+="-> STOP: Pas d OB\n"; return; }
-   sig.confidence += 20;
+   if(RequireOB && !obFound) { g_Debug+="-> STOP: Pas d OB\n"; return; }
+   if(obFound) sig.confidence += 20;
 
+   // FVG (bonus)
    double fvgT=0, fvgB=0;
    if(FindFVG(fvgT,fvgB,bias,PERIOD_M15)) { sig.confidence+=10; g_Debug+="FVG: OUI\n"; }
 
@@ -262,9 +303,7 @@ void GenerateSignal(Signal &sig)
    {
       sig.entry = Ask;
       double slBase = (obBot > 0) ? obBot - pip : sig.entry - slD;
-      // Si SL trop loin (> SL_Pips), utilise SL fixe
       if(sig.entry - slBase > slD) slBase = sig.entry - slD;
-      // Valide contre MODE_STOPLEVEL
       if(sig.entry - slBase < minStop) slBase = sig.entry - minStop;
       sig.sl = slBase;
       sig.tp = sig.entry + tpD;
@@ -273,9 +312,7 @@ void GenerateSignal(Signal &sig)
    {
       sig.entry = Bid;
       double slBase = (obTop > 0) ? obTop + pip : sig.entry + slD;
-      // Si SL trop loin (> SL_Pips), utilise SL fixe
       if(slBase - sig.entry > slD) slBase = sig.entry + slD;
-      // Valide contre MODE_STOPLEVEL
       if(slBase - sig.entry < minStop) slBase = sig.entry + minStop;
       sig.sl = slBase;
       sig.tp = sig.entry - tpD;
@@ -284,9 +321,6 @@ void GenerateSignal(Signal &sig)
    sig.direction = bias;
 }
 
-//+------------------------------------------------------------------+
-// FIX PRINCIPAL: mitigation basee sur les CLOTURES, pas les meches
-// Un OB est mitigue seulement quand une bougie CLOTURE au-dela
 //+------------------------------------------------------------------+
 bool FindOrderBlock(double &obTop, double &obBot, string bias, int tf)
 {
@@ -299,38 +333,32 @@ bool FindOrderBlock(double &obTop, double &obBot, string bias, int tf)
       double o=iOpen(Symbol(),tf,i),  c=iClose(Symbol(),tf,i);
       double h=iHigh(Symbol(),tf,i),  l=iLow(Symbol(),tf,i);
 
-      if(bias=="BUY" && c<o) // bougie baissiere = OB haussier potentiel
+      if(bias=="BUY" && c<o)
       {
-         // Confirmation: la bougie qui suit (plus recente) est haussiere
          bool conf = (iClose(Symbol(),tf,i-1) > iOpen(Symbol(),tf,i-1));
          if(!conf) continue;
 
-         // FIX: mitigation = une cloture SOUS le bas de l'OB (pas une simple meche)
          bool mit = false;
          for(int m=1; m<i; m++)
             if(iClose(Symbol(),tf,m) < l) { mit=true; break; }
          if(mit) continue;
 
-         // Prix dans la zone OB (tolerance de OB_TouchPips)
          if(price >= l-tol && price <= h+tol)
          {
             obTop=h; obBot=l; return true;
          }
       }
 
-      if(bias=="SELL" && c>o) // bougie haussiere = OB baissier potentiel
+      if(bias=="SELL" && c>o)
       {
-         // Confirmation: la bougie qui suit (plus recente) est baissiere
          bool conf = (iClose(Symbol(),tf,i-1) < iOpen(Symbol(),tf,i-1));
          if(!conf) continue;
 
-         // FIX: mitigation = une cloture AU-DESSUS du haut de l'OB
          bool mit = false;
          for(int m=1; m<i; m++)
             if(iClose(Symbol(),tf,m) > h) { mit=true; break; }
          if(mit) continue;
 
-         // Prix dans la zone OB (tolerance de OB_TouchPips)
          if(price >= l-tol && price <= h+tol)
          {
             obTop=h; obBot=l; return true;
@@ -469,9 +497,9 @@ bool IsInKillZone()
 {
    MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
    int gmtH = (dt.hour - BrokerGMT + 24) % 24;
-   return (gmtH>=LondonStart   && gmtH<LondonEnd)    ||  // broker 7-11h
-          (gmtH>=NewYorkStart   && gmtH<NewYorkEnd)   ||  // broker 12-16h
-          (gmtH>=NYPMStart      && gmtH<NYPMEnd);         // broker 16-18h
+   return (gmtH>=LondonStart   && gmtH<LondonEnd)   ||
+          (gmtH>=NewYorkStart   && gmtH<NewYorkEnd)  ||
+          (gmtH>=NYPMStart      && gmtH<NYPMEnd);
 }
 
 bool SpreadOK() { return MarketInfo(Symbol(),MODE_SPREAD) <= SpreadMax; }
@@ -492,14 +520,13 @@ void UpdateConsecutiveLosses()
    if(hist == lastH) return;
    lastH = hist;
 
-   // FIX: ne regarde que les trades du jour pour eviter le blocage permanent
    datetime dayStart = (datetime)(TimeCurrent() - TimeCurrent() % 86400);
 
    for(int i=hist-1; i>=0; i--)
    {
       if(!OrderSelect(i,SELECT_BY_POS,MODE_HISTORY)) continue;
       if(OrderMagicNumber()!=MagicNumber || OrderSymbol()!=Symbol()) continue;
-      if(OrderCloseTime() < dayStart) break; // stop au debut du jour
+      if(OrderCloseTime() < dayStart) break;
       if(OrderTicket() == g_LastClosedTicket) break;
 
       g_LastClosedTicket = OrderTicket();
