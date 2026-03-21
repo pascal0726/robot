@@ -550,11 +550,9 @@ void ResetDailyCounters()
    if(n.day != l.day) {
       g_DailyStartBalance = AccountBalance();
       g_TradesToday       = 0;
-      // FIX v5: NE PAS remettre g_ConsecutiveLosses a 0 ici.
-      // Le compteur ne se remet a 0 que sur un trade gagnant (dans UpdateConsecutiveLosses).
-      // Cela garantit que MaxConsecutiveLosses est respecte meme en croisement de sessions.
+      g_ConsecutiveLosses = 0;  // Reset chaque jour pour reprendre les trades le lendemain
       g_LastDayReset      = TimeCurrent();
-      Print("Nouveau jour - Balance:", g_DailyStartBalance, " | Pertes cons:", g_ConsecutiveLosses);
+      Print("Nouveau jour - Balance:", g_DailyStartBalance, " | Pertes cons remises a 0");
    }
 }
 
@@ -599,12 +597,13 @@ void UpdateConsecutiveLosses()
    if(hist == lastH) return;
    lastH = hist;
 
-   // FIX v5: suppression du filtre dayStart.
-   // On regarde TOUT l'historique recent pour respecter les pertes consecutives cross-sessions.
+   datetime dayStart = (datetime)(TimeCurrent() - TimeCurrent() % 86400);
+
    for(int i=hist-1; i>=0; i--)
    {
       if(!OrderSelect(i,SELECT_BY_POS,MODE_HISTORY)) continue;
       if(OrderMagicNumber()!=MagicNumber || OrderSymbol()!=Symbol()) continue;
+      if(OrderCloseTime() < dayStart) break;
       if(OrderTicket() == g_LastClosedTicket) break;
 
       g_LastClosedTicket = OrderTicket();
