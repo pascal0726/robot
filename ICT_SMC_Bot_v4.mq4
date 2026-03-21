@@ -33,8 +33,9 @@ input int    SwingLookback        = 5;
 input bool   UseKillZone          = false;
 input bool   UseMultiTF           = false;
 input bool   RequireOB            = true;
-// --- Sessions GMT ---
-input int    BrokerGMT            = 2;
+// --- Sessions (heures France / ICT) ---
+input int    BrokerGMT            = 2;  // Decalage horaire du broker par rapport a GMT
+input int    ParisGMT             = 2;  // Heure France: ete=2, hiver=1
 input int    LondonStart          = 7;
 input int    LondonEnd            = 11;
 input int    NewYorkStart         = 12;
@@ -110,11 +111,11 @@ void OnTick()
    int  minsSince = (g_LastTradeTime > 0) ? (int)((TimeCurrent()-g_LastTradeTime)/60) : 9999;
 
    MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
-   int gmtH = (dt.hour - BrokerGMT + 24) % 24;
+   int parisH = (dt.hour - BrokerGMT + ParisGMT + 24) % 24;
 
    Comment(
       "=== ICT/SMC Bot v4.0 ===\n",
-      "Broker: ", dt.hour, "h", dt.min, " | GMT: ", gmtH, "h\n",
+      "Broker: ", dt.hour, "h", dt.min, " | France: ", parisH, "h\n",
       "M15 EMA: ", GetEMATrend(PERIOD_M15), "\n",
       UseMultiTF ? ("D1 EMA : " + GetEMATrend(PERIOD_D1) + "\n") : "",
       UseMultiTF ? ("H4 EMA : " + GetEMATrend(PERIOD_H4) + "\n") : "",
@@ -518,10 +519,10 @@ double GetDailyLossPct()
 bool IsInKillZone()
 {
    MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
-   int gmtH = (dt.hour - BrokerGMT + 24) % 24;
-   return (gmtH>=LondonStart   && gmtH<LondonEnd)   ||
-          (gmtH>=NewYorkStart   && gmtH<NewYorkEnd)  ||
-          (gmtH>=NYPMStart      && gmtH<NYPMEnd);
+   int parisH = (dt.hour - BrokerGMT + ParisGMT + 24) % 24;
+   return (parisH>=LondonStart   && parisH<LondonEnd)   ||
+          (parisH>=NewYorkStart   && parisH<NewYorkEnd)  ||
+          (parisH>=NYPMStart      && parisH<NYPMEnd);
 }
 
 bool SpreadOK() { return MarketInfo(Symbol(),MODE_SPREAD) <= SpreadMax; }
