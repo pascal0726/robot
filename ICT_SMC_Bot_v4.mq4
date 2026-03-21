@@ -15,7 +15,7 @@ input int    SL_Pips              = 40;
 input int    TP_Pips              = 120;
 // --- Break-Even ---
 input bool   UseBE                = true;
-input int    BE_Trigger_Pips      = 40;
+input int    BE_Trigger_Pips      = 20;
 input int    BE_Buffer_Pips       = 3;
 // --- Trailing Stop ---
 input bool   UseTrail             = true;
@@ -27,7 +27,7 @@ input int    EMA_Slow             = 200;
 input int    OB_Lookback          = 50;
 input int    FVG_MinPips          = 5;
 input int    OB_TouchPips         = 30;
-input int    ConfidenceMin        = 45;
+input int    ConfidenceMin        = 60;
 input int    SwingLookback        = 5;
 // --- Filtres optionnels (desactiver pour tester) ---
 input bool   UseKillZone          = false;
@@ -105,6 +105,8 @@ void OnTick()
    bool spreadOK  = SpreadOK();
    bool atrOK     = ATR_OK();
    bool gapOK     = GapOK(sig.direction);
+   // Après une perte: cooldown doublé (2x MinTimeBetweenTrades)
+   int  cooldownRequired = (g_ConsecutiveLosses > 0) ? MinTimeBetweenTrades * 2 : MinTimeBetweenTrades;
    int  minsSince = (g_LastTradeTime > 0) ? (int)((TimeCurrent()-g_LastTradeTime)/60) : 9999;
 
    MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
@@ -123,7 +125,7 @@ void OnTick()
       "Trades: ", g_TradesToday, "/", MaxTradesPerDay,
       " | Perte jour: ", DoubleToStr(GetDailyLossPct(),2), "%\n",
       "Pertes cons: ", g_ConsecutiveLosses, "/", MaxConsecutiveLosses,
-      " | Attente: ", minsSince, "/", MinTimeBetweenTrades, "min\n",
+      " | Attente: ", minsSince, "/", cooldownRequired, "min\n",
       "--- Signal ---\n",
       g_Debug,
       "Dir: ", sig.direction, " | Score: ", sig.confidence, "%\n"
@@ -132,7 +134,7 @@ void OnTick()
    if(!CanTrade() || !inKZ || !spreadOK || !atrOK || !gapOK) return;
    if(sig.direction=="NONE" || sig.confidence<ConfidenceMin)  return;
    if(CountOpenTrades() >= MaxOpenTrades)                      return;
-   if(minsSince < MinTimeBetweenTrades)                        return;
+   if(minsSince < cooldownRequired)                            return;
 
    OpenTrade(sig, FixedLot);
 }
@@ -551,7 +553,17 @@ void UpdateConsecutiveLosses()
 
       g_LastClosedTicket = OrderTicket();
       double res = OrderProfit() + OrderSwap() + OrderCommission();
-      g_ConsecutiveLosses = (res < 0) ? g_ConsecutiveLosses+1 : 0;
+      if(res < 0)
+      {
+         g_ConsecutiveLosses++;
+         // Redémarre le cooldown depuis la fermeture du trade perdant
+         // Evite de re-trader immédiatement après un SL (ex: SL à 02:24, prochain trade pas avant 03:24)
+         g_LastTradeTime = OrderCloseTime();
+      }
+      else
+      {
+         g_ConsecutiveLosses = 0;
+      }
       break;
    }
 }
