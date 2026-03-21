@@ -27,12 +27,12 @@ input int    EMA_Slow             = 200;
 input int    OB_Lookback          = 50;
 input int    FVG_MinPips          = 5;
 input int    OB_TouchPips         = 30;
-input int    ConfidenceMin        = 45;   // FIX: 60->45 (plus de trades)
+input int    ConfidenceMin        = 45;
 input int    SwingLookback        = 5;
 // --- Filtres optionnels (desactiver pour tester) ---
-input bool   UseKillZone          = false;  // FIX: false par defaut (evite blocage backtest)
-input bool   UseMultiTF           = false;  // FIX: false = seulement M15 (backtest multi-TF bugue)
-input bool   RequireOB            = true;   // FIX: OB requis ou non
+input bool   UseKillZone          = false;
+input bool   UseMultiTF           = false;
+input bool   RequireOB            = true;
 // --- Sessions GMT ---
 input int    BrokerGMT            = 2;
 input int    LondonStart          = 5;
