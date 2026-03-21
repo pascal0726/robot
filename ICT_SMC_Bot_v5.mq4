@@ -298,18 +298,20 @@ void GenerateSignal(Signal &sig)
             // SHORT valide si: M15 est SELL fort + swing H1 confirme SELL + D1 n'est pas en acceleration
             if(m15T == "SELL" && h1SwingB == "SELL")
             {
-               // Ne pas shorter si D1 est en forte acceleration haussiere
-               double d1EmaFast = iMA(Symbol(), PERIOD_D1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
-               double d1EmaOld  = iMA(Symbol(), PERIOD_D1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 5);
+               // Filtre dynamique: bloque le SHORT uniquement si pente D1 > 2x ATR daily
+               double d1EmaFast   = iMA(Symbol(), PERIOD_D1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
+               double d1EmaOld    = iMA(Symbol(), PERIOD_D1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 5);
                double d1SlopePips = (d1EmaFast - d1EmaOld) / GetPip();
-               if(d1SlopePips < 30.0) // D1 pente < 30 pips sur 5 bars = pas en acceleration forte
+               double d1ATR       = iATR(Symbol(), PERIOD_D1, ATR_Period, 1) / GetPip();
+               double slopeLimit  = d1ATR * 2.0; // = environ 400-600 pips sur gold
+               if(d1SlopePips < slopeLimit)
                {
                   bias = "SELL";
-                  sig.confidence = ShortConfidenceMin + 5; // score de base SHORT contre-tendance
-                  g_Debug += "-> SHORT contre-tendance: M15=SELL + H1Swing=SELL\n";
+                  sig.confidence = ShortConfidenceMin + 5;
+                  g_Debug += "-> SHORT: M15=SELL + H1Swing=SELL (pente=" + DoubleToStr(d1SlopePips,0) + " < " + DoubleToStr(slopeLimit,0) + ")\n";
                }
                else
-                  g_Debug += "-> SHORT bloque: D1 en forte acceleration (" + DoubleToStr(d1SlopePips,1) + " pips)\n";
+                  g_Debug += "-> SHORT bloque: D1 trop fort (" + DoubleToStr(d1SlopePips,0) + " > " + DoubleToStr(slopeLimit,0) + ")\n";
             }
          }
       }
