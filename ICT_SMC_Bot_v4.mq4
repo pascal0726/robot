@@ -29,19 +29,22 @@ input int    FVG_MinPips          = 5;    // FIX: 8->5 (plus de FVGs detectes)
 input int    OB_TouchPips         = 30;   // FIX: 20->30 (Gold bouge vite)
 input int    ConfidenceMin        = 60;
 input int    SwingLookback        = 5;
-// --- Sessions GMT ---
+// --- Sessions GMT (BrokerGMT=2 → heure broker = GMT+2) ---
+// ICT Kill Zones en heure broker: 7-11h | 12-16h | 16-18h
 input int    BrokerGMT            = 2;
-input int    LondonStart          = 7;
-input int    LondonEnd            = 11;
-input int    NewYorkStart         = 13;
-input int    NewYorkEnd           = 17;
+input int    LondonStart          = 5;   // GMT → broker 7h  (London open KZ)
+input int    LondonEnd            = 9;   // GMT → broker 11h
+input int    NewYorkStart         = 10;  // GMT → broker 12h (NY open KZ)
+input int    NewYorkEnd           = 14;  // GMT → broker 16h
+input int    NYPMStart            = 14;  // GMT → broker 16h (NY PM KZ)
+input int    NYPMEnd              = 16;  // GMT → broker 18h
 // --- Filtres ---
 input int    SpreadMax            = 200;
 input int    MinTimeBetweenTrades = 30;
 input int    MaxConsecutiveLosses = 3;
 input int    ATR_Period           = 14;
 input double ATR_MaxMultiplier    = 2.0;
-input int    GapProtect_Pips      = 15;
+input int    GapProtect_Pips      = 150;  // FIX: Gold pip=0.10 → 150 pips = $15
 input int    MagicNumber          = 202504;
 input string TradeComment         = "ICT_v4";
 
@@ -57,7 +60,8 @@ string   g_Debug             = "";
 
 struct Signal { string direction; double entry, sl, tp; int confidence; };
 
-double GetPip() { return (Digits == 5 || Digits == 3) ? Point * 10.0 : Point; }
+// FIX: Digits==2 = Gold/Silver (XAUUSD Digits=2, Point=0.01 → pip=0.10)
+double GetPip() { return (Digits == 5 || Digits == 3 || Digits == 2) ? Point * 10.0 : Point; }
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -69,8 +73,9 @@ int OnInit()
    g_LastClosedTicket  = -1;
    Print("=== ICT/SMC Bot v4.0 demarre ===");
    Print("BrokerGMT: GMT+", BrokerGMT,
-         " | London: ", LondonStart, "-", LondonEnd, "h GMT",
-         " | NY: ", NewYorkStart, "-", NewYorkEnd, "h GMT");
+         " | London KZ: ", LondonStart, "-", LondonEnd, "h GMT (broker ", LondonStart+BrokerGMT, "-", LondonEnd+BrokerGMT, "h)",
+         " | NY KZ: ", NewYorkStart, "-", NewYorkEnd, "h GMT (broker ", NewYorkStart+BrokerGMT, "-", NewYorkEnd+BrokerGMT, "h)",
+         " | NYPM KZ: ", NYPMStart, "-", NYPMEnd, "h GMT (broker ", NYPMStart+BrokerGMT, "-", NYPMEnd+BrokerGMT, "h)");
    return INIT_SUCCEEDED;
 }
 
@@ -464,8 +469,9 @@ bool IsInKillZone()
 {
    MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
    int gmtH = (dt.hour - BrokerGMT + 24) % 24;
-   return (gmtH>=LondonStart && gmtH<LondonEnd) ||
-          (gmtH>=NewYorkStart && gmtH<NewYorkEnd);
+   return (gmtH>=LondonStart   && gmtH<LondonEnd)    ||  // broker 7-11h
+          (gmtH>=NewYorkStart   && gmtH<NewYorkEnd)   ||  // broker 12-16h
+          (gmtH>=NYPMStart      && gmtH<NYPMEnd);         // broker 16-18h
 }
 
 bool SpreadOK() { return MarketInfo(Symbol(),MODE_SPREAD) <= SpreadMax; }
