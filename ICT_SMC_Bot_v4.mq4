@@ -493,9 +493,9 @@ void ResetDailyCounters()
    if(n.day != l.day) {
       g_DailyStartBalance = AccountBalance();
       g_TradesToday       = 0;
-      g_ConsecutiveLosses = 0;
+      // g_ConsecutiveLosses ne se remet PAS a 0 - persist entre les jours
       g_LastDayReset      = TimeCurrent();
-      Print("Nouveau jour - Balance:", g_DailyStartBalance);
+      Print("Nouveau jour - Balance:", g_DailyStartBalance, " | Pertes cons:", g_ConsecutiveLosses);
    }
 }
 
