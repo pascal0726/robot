@@ -8,7 +8,7 @@
 // --- Gestion du risque ---
 input double FixedLot             = 0.5;
 input double MaxDailyLoss_Pct     = 2.5;
-input int    MaxTradesPerDay      = 4;
+input int    MaxTradesPerDay      = 3;
 input int    MaxOpenTrades        = 1;
 // --- SL / TP en pips ---
 input int    SL_Pips              = 40;
@@ -43,7 +43,7 @@ input int    NYPMStart            = 14;
 input int    NYPMEnd              = 16;
 // --- Filtres ---
 input int    SpreadMax            = 200;
-input int    MinTimeBetweenTrades = 30;
+input int    MinTimeBetweenTrades = 60;
 input int    MaxConsecutiveLosses = 3;
 input int    ATR_Period           = 14;
 input double ATR_MaxMultiplier    = 2.0;
@@ -164,6 +164,19 @@ bool GapOK(string direction)
    return (move <= GapProtect_Pips * pip);
 }
 
+// ====================== PENTE EMA ======================
+bool HasEMASlope(int tf, string direction)
+{
+   double pip     = GetPip();
+   double ema_now = iMA(Symbol(), tf, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double ema_old = iMA(Symbol(), tf, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 10);
+   if(ema_now <= 0 || ema_old <= 0) return true;
+   double slopePips = (ema_now - ema_old) / pip;
+   if(direction == "BUY"  && slopePips <  2.0) return false;
+   if(direction == "SELL" && slopePips > -2.0) return false;
+   return true;
+}
+
 // ====================== TENDANCE ======================
 string GetEMATrend(int tf)
 {
@@ -273,11 +286,16 @@ void GenerateSignal(Signal &sig)
       if(m15T == "BUY_FAIBLE" || m15T == "SELL_FAIBLE") { g_Debug+="-> STOP: Signal EMA faible\n"; return; }
       sig.confidence += 40;
 
-      // H1 swing doit confirmer la direction
-      string h1B = GetSwingBias(PERIOD_H1);
-      g_Debug += "H1: " + h1B + "\n";
-      if(h1B != "NEUTRE" && h1B != m15B) { g_Debug+="-> STOP: H1 oppose M15\n"; return; }
-      if(h1B == m15B) sig.confidence += 20;
+      // H1 EMA obligatoire - bloque les entrees contre la tendance H1
+      string h1EmaT = GetEMATrend(PERIOD_H1);
+      string h1EmaB = TrendBase(h1EmaT);
+      g_Debug += "H1: " + h1EmaT + "\n";
+      if(h1EmaB != "NEUTRE" && h1EmaB != m15B) { g_Debug+="-> STOP: H1 EMA oppose M15\n"; return; }
+      if(h1EmaB == m15B) sig.confidence += 20;
+      else sig.confidence -= 10; // H1 neutre = moins confiant
+
+      // Pente EMA50 M15 obligatoire - evite les marches plates
+      if(!HasEMASlope(PERIOD_M15, m15B)) { g_Debug+="-> STOP: Pente EMA M15 plate\n"; return; }
 
       bias = m15B;
    }
