@@ -311,6 +311,14 @@ void GenerateSignal(Signal &sig)
    double fvgT=0, fvgB=0;
    if(FindFVG(fvgT,fvgB,bias,PERIOD_M15)) { sig.confidence+=10; g_Debug+="FVG: OUI\n"; }
 
+   // Confirmation bougie M15 - la derniere bougie fermee doit aller dans le sens du trade
+   // Evite d'entrer pendant que le prix chute encore (pour BUY) ou monte (pour SELL)
+   double o1 = iOpen(Symbol(), PERIOD_M15, 1);
+   double c1 = iClose(Symbol(), PERIOD_M15, 1);
+   if(bias == "BUY"  && c1 <= o1) { g_Debug+="-> STOP: Bougie M15 baissiere\n"; return; }
+   if(bias == "SELL" && c1 >= o1) { g_Debug+="-> STOP: Bougie M15 haussiere\n"; return; }
+   sig.confidence += 10;
+
    g_Debug += "Score: " + IntegerToString(sig.confidence) + "%\n";
    if(sig.confidence < ConfidenceMin) { g_Debug+="-> STOP: Score insuffisant\n"; return; }
 
