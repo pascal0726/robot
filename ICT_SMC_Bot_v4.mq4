@@ -35,12 +35,12 @@ input bool   UseMultiTF           = false;
 input bool   RequireOB            = true;
 // --- Sessions GMT ---
 input int    BrokerGMT            = 2;
-input int    LondonStart          = 5;
-input int    LondonEnd            = 9;
-input int    NewYorkStart         = 10;
-input int    NewYorkEnd           = 14;
-input int    NYPMStart            = 14;
-input int    NYPMEnd              = 16;
+input int    LondonStart          = 7;
+input int    LondonEnd            = 11;
+input int    NewYorkStart         = 12;
+input int    NewYorkEnd           = 16;
+input int    NYPMStart            = 16;
+input int    NYPMEnd              = 18;
 // --- Filtres ---
 input int    SpreadMax            = 200;
 input int    MinTimeBetweenTrades = 60;
