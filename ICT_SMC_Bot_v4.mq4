@@ -264,18 +264,20 @@ void GenerateSignal(Signal &sig)
    }
    else
    {
-      // FIX: MODE SIMPLE - seulement M15 EMA (fonctionne toujours en backtest)
+      // MODE SIMPLE - seulement M15 EMA
       string m15T = GetEMATrend(PERIOD_M15);
       string m15B = TrendBase(m15T);
       g_Debug += "M15: " + m15T + "\n";
       if(m15B == "NEUTRE") { g_Debug+="-> STOP: M15 neutre\n"; return; }
-      sig.confidence += (m15T==m15B) ? 40 : 25;
+      // Bloquer signaux faibles (prix du mauvais cote de l'EMA50 = contre-tendance)
+      if(m15T == "BUY_FAIBLE" || m15T == "SELL_FAIBLE") { g_Debug+="-> STOP: Signal EMA faible\n"; return; }
+      sig.confidence += 40;
 
-      // H1 swing comme confirmation supplementaire
+      // H1 swing doit confirmer la direction
       string h1B = GetSwingBias(PERIOD_H1);
       g_Debug += "H1: " + h1B + "\n";
-      if(h1B!="NEUTRE" && h1B!=m15B) { g_Debug+="-> STOP: H1 oppose M15\n"; return; }
-      if(h1B==m15B) sig.confidence += 20;
+      if(h1B != "NEUTRE" && h1B != m15B) { g_Debug+="-> STOP: H1 oppose M15\n"; return; }
+      if(h1B == m15B) sig.confidence += 20;
 
       bias = m15B;
    }
