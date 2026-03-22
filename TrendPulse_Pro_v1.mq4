@@ -33,8 +33,11 @@ input int    MaxOpenTrades      = 1;       // 1 seul trade a la fois (discipline
 input int    MaxConsecLosses    = 4;       // Pause si N pertes consecutives
 
 //=== SL / TP ======================================================
-input double ATR_SL_Mult        = 1.5;    // SL = ATR x ce multiplicateur
-input double ATR_TP1_Mult       = 2.2;    // TP1 = ATR x ce multiplicateur (clot 50%)
+input bool   UseFixedSLTP       = false;  // true = SL/TP fixes en pips | false = ATR dynamique
+input int    FixedSL_Pips       = 150;    // SL fixe en pips (si UseFixedSLTP=true)
+input int    FixedTP_Pips       = 300;    // TP fixe en pips (si UseFixedSLTP=true)
+input double ATR_SL_Mult        = 1.5;    // SL = ATR x ce multiplicateur (si UseFixedSLTP=false)
+input double ATR_TP1_Mult       = 2.2;    // TP1 = ATR x ce multiplicateur (si UseFixedSLTP=false)
 input double ATR_Trail_Mult     = 2.5;    // Trail TP2 = Chandelier Exit (ATR x mult)
 input int    ATR_Period         = 14;      // Periode ATR
 
@@ -167,11 +170,21 @@ void OnTick()
    int signal = GetSignal();
    if(signal == 0) return;
 
-   // Calcul SL/TP/Lot dynamiques
+   // Calcul SL/TP
    double pip  = GetPip();
    double atr  = iATR(Symbol(), PERIOD_M15, ATR_Period, 1);
-   double slDist = atr * ATR_SL_Mult;
-   double tp1Dist= atr * ATR_TP1_Mult;
+
+   double slDist, tp1Dist;
+   if(UseFixedSLTP)
+   {
+      slDist  = FixedSL_Pips  * pip;
+      tp1Dist = FixedTP_Pips  * pip;
+   }
+   else
+   {
+      slDist  = atr * ATR_SL_Mult;
+      tp1Dist = atr * ATR_TP1_Mult;
+   }
 
    double entry, sl, tp1;
    if(signal == 1) // BUY
@@ -200,7 +213,7 @@ void OnTick()
       double minLot = MarketInfo(Symbol(), MODE_MINLOT);
       double maxLot = MarketInfo(Symbol(), MODE_MAXLOT);
       double lotStep= MarketInfo(Symbol(), MODE_LOTSTEP);
-      lot = MathFloor(lot / lotStep) * lotStep;
+      lot = NormalizeDouble(MathRound(lot / lotStep) * lotStep, 2);
       lot = MathMax(minLot, MathMin(maxLot, lot));
    }
    else
