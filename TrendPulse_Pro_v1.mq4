@@ -256,16 +256,16 @@ void OnTick()
 }
 
 //+------------------------------------------------------------------+
-//| DETECTION SWING HIGH / SWING LOW (interne, sans affichage)       |
+//| DETECTION SWING HIGH / SWING LOW - 3 bougies (interne)          |
 //| Retourne : 1=uptrend (HH+HL), -1=downtrend (LH+LL), 0=unclear  |
 //+------------------------------------------------------------------+
 int GetSwingBias()
 {
-   int lookback = 5;   // bougies de chaque cote pour valider un swing
-   int maxSearch = 200; // bougies max a scanner
+   int lookback = 1;    // 1 bougie de chaque cote = swing 3 bougies
+   int maxSearch = 150;
 
-   double sh1 = 0, sh2 = 0; // 2 derniers swing highs
-   double sl1 = 0, sl2 = 0; // 2 derniers swing lows
+   double sh1 = 0, sh2 = 0;
+   double sl1 = 0, sl2 = 0;
    int shCount = 0, slCount = 0;
 
    for(int i = lookback + 1; i < maxSearch - lookback; i++)
@@ -275,87 +275,165 @@ int GetSwingBias()
       double hi = iHigh(Symbol(), PERIOD_M15, i);
       double lo = iLow (Symbol(), PERIOD_M15, i);
 
-      // Test swing high
-      if(shCount < 2)
+      // Swing high : bougie centrale plus haute que voisines
+      if(shCount < 2 &&
+         iHigh(Symbol(), PERIOD_M15, i-1) < hi &&
+         iHigh(Symbol(), PERIOD_M15, i+1) < hi)
       {
-         bool isHigh = true;
-         for(int k = 1; k <= lookback && isHigh; k++)
-         {
-            if(iHigh(Symbol(), PERIOD_M15, i-k) >= hi) isHigh = false;
-            if(iHigh(Symbol(), PERIOD_M15, i+k) >= hi) isHigh = false;
-         }
-         if(isHigh)
-         {
-            if(shCount == 0) sh1 = hi;
-            else             sh2 = hi;
-            shCount++;
-         }
+         if(shCount == 0) sh1 = hi; else sh2 = hi;
+         shCount++;
       }
 
-      // Test swing low
-      if(slCount < 2)
+      // Swing low : bougie centrale plus basse que voisines
+      if(slCount < 2 &&
+         iLow(Symbol(), PERIOD_M15, i-1) > lo &&
+         iLow(Symbol(), PERIOD_M15, i+1) > lo)
       {
-         bool isLow = true;
-         for(int k = 1; k <= lookback && isLow; k++)
-         {
-            if(iLow(Symbol(), PERIOD_M15, i-k) <= lo) isLow = false;
-            if(iLow(Symbol(), PERIOD_M15, i+k) <= lo) isLow = false;
-         }
-         if(isLow)
-         {
-            if(slCount == 0) sl1 = lo;
-            else             sl2 = lo;
-            slCount++;
-         }
+         if(slCount == 0) sl1 = lo; else sl2 = lo;
+         slCount++;
       }
    }
 
-   if(shCount < 2 || slCount < 2)
-   {
-      Print("SwingBias: pas assez de swings detectes sh=", shCount, " sl=", slCount);
-      return 0;
-   }
+   if(shCount < 2 || slCount < 2) { Print("SwingBias: manque swings sh=",shCount," sl=",slCount); return 0; }
 
-   bool hh = (sh1 > sh2); // dernier swing high > precedent
-   bool hl = (sl1 > sl2); // dernier swing low  > precedent
+   bool hh = (sh1 > sh2);
+   bool hl = (sl1 > sl2);
    bool lh = (sh1 < sh2);
    bool ll = (sl1 < sl2);
 
-   if(hh && hl) { Print("SwingBias: UPTREND HH=", DoubleToStr(sh1,5), " HL=", DoubleToStr(sl1,5)); return  1; }
-   if(lh && ll) { Print("SwingBias: DOWNTREND LH=", DoubleToStr(sh1,5), " LL=", DoubleToStr(sl1,5)); return -1; }
+   if(hh && hl) { Print("SwingBias UPTREND   HH=",DoubleToStr(sh1,5)," HL=",DoubleToStr(sl1,5)); return  1; }
+   if(lh && ll) { Print("SwingBias DOWNTREND LH=",DoubleToStr(sh1,5)," LL=",DoubleToStr(sl1,5)); return -1; }
 
-   Print("SwingBias: RANGE / unclear");
+   Print("SwingBias RANGE/unclear");
    return 0;
 }
 
 //+------------------------------------------------------------------+
-//| SIGNAL MULTI-TF                                                   |
+//| DETECTION FVG - Fair Value Gap (interne, sans affichage)         |
+//| Retourne : 1=FVG haussier, -1=FVG baissier, 0=rien              |
+//+------------------------------------------------------------------+
+int GetFVGBias()
+{
+   double curPrice = iClose(Symbol(), PERIOD_M15, 1);
+
+   for(int i = 2; i < 60; i++)
+   {
+      double hiA = iHigh(Symbol(), PERIOD_M15, i+1); // bougie A (gauche)
+      double loA = iLow (Symbol(), PERIOD_M15, i+1);
+      double hiC = iHigh(Symbol(), PERIOD_M15, i-1); // bougie C (droite)
+      double loC = iLow (Symbol(), PERIOD_M15, i-1);
+
+      // FVG haussier : high[A] < low[C] => gap entre hiA et loC
+      if(loC > hiA && curPrice >= hiA && curPrice <= loC)
+      {
+         Print("FVG Haussier: zone ",DoubleToStr(hiA,5)," - ",DoubleToStr(loC,5));
+         return 1;
+      }
+
+      // FVG baissier : low[A] > high[C] => gap entre hiC et loA
+      if(hiC < loA && curPrice <= loA && curPrice >= hiC)
+      {
+         Print("FVG Baissier: zone ",DoubleToStr(hiC,5)," - ",DoubleToStr(loA,5));
+         return -1;
+      }
+   }
+
+   return 0;
+}
+
+//+------------------------------------------------------------------+
+//| DETECTION WYCKOFF - Spring et Upthrust (interne)                 |
+//| Retourne : 1=Spring (BUY), -1=Upthrust (SELL), 0=rien           |
+//+------------------------------------------------------------------+
+int GetWyckoffSignal()
+{
+   int    rangeBars = 60;
+   double rangeHigh = -999999, rangeLow = 999999;
+
+   // Calcul du range sur les 60 dernières bougies (en excluant la dernière)
+   for(int i = 2; i < rangeBars; i++)
+   {
+      double h = iHigh(Symbol(), PERIOD_M15, i);
+      double l = iLow (Symbol(), PERIOD_M15, i);
+      if(h > rangeHigh) rangeHigh = h;
+      if(l < rangeLow)  rangeLow  = l;
+   }
+
+   double atr       = iATR(Symbol(), PERIOD_M15, 14, 1);
+   double rangeSize = rangeHigh - rangeLow;
+
+   // Range valide : ni trop grand (tendance) ni trop petit (bruit)
+   if(atr <= 0 || rangeSize > 5.0 * atr || rangeSize < 0.5 * atr) return 0;
+
+   double lastLow   = iLow  (Symbol(), PERIOD_M15, 1);
+   double lastHigh  = iHigh (Symbol(), PERIOD_M15, 1);
+   double lastClose = iClose (Symbol(), PERIOD_M15, 1);
+
+   // Spring : wick casse le bas du range mais la bougie clot au-dessus
+   if(lastLow < rangeLow && lastClose > rangeLow)
+   {
+      Print("Wyckoff SPRING: low=",DoubleToStr(lastLow,5)," rangeLow=",DoubleToStr(rangeLow,5));
+      return 1;
+   }
+
+   // Upthrust : wick casse le haut du range mais la bougie clot en-dessous
+   if(lastHigh > rangeHigh && lastClose < rangeHigh)
+   {
+      Print("Wyckoff UPTHRUST: high=",DoubleToStr(lastHigh,5)," rangeHigh=",DoubleToStr(rangeHigh,5));
+      return -1;
+   }
+
+   return 0;
+}
+
+//+------------------------------------------------------------------+
+//| SIGNAL PRINCIPAL                                                  |
 //| Retourne : 1=BUY, -1=SELL, 0=RIEN                               |
 //+------------------------------------------------------------------+
 int GetSignal()
 {
-   // ---- STRUCTURE DE MARCHE : swing HH/HL/LH/LL sur M15 ----
+   // ---- 1. STRUCTURE SWING 3 bougies ----
    int swingBias = GetSwingBias();
 
-   // ---- ENTREE M15 : EMA21 + MACD ----
+   // ---- 2. WYCKOFF Spring / Upthrust (signal fort) ----
+   int wyckoff = GetWyckoffSignal();
+
+   // ---- 3. FVG confirmation ----
+   int fvg = GetFVGBias();
+
+   // ---- 4. ENTREE M15 : EMA21 + MACD ----
    double m15Ema21  = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    double m15Close1 = iClose(Symbol(), PERIOD_M15, 1);
-   if(m15Ema21 <= 0) { Print("BLOQUE signal: M15 EMA21 invalide"); return 0; }
+   if(m15Ema21 <= 0) { Print("BLOQUE: M15 EMA21 invalide"); return 0; }
 
    double macdMain = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_MAIN,  1);
    double macdSig  = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_SIGNAL,1);
    double hist     = macdMain - macdSig;
 
-   // BUY : prix > EMA21 + MACD haussier + structure pas baissiere (LH+LL)
-   if(m15Close1 > m15Ema21 && hist > 0 && swingBias != -1)
+   // ---- WYCKOFF : override fort si structure confirme ----
+   if(wyckoff == 1 && swingBias != -1)
    {
-      Print("SIGNAL BUY: prix=", DoubleToStr(m15Close1,5), " ema21=", DoubleToStr(m15Ema21,5), " hist=", DoubleToStr(hist,6), " swing=", swingBias);
+      Print("SIGNAL BUY [SPRING] swing=",swingBias," fvg=",fvg);
       return 1;
    }
-   // SELL : prix < EMA21 + MACD baissier + structure pas haussiere (HH+HL)
-   if(m15Close1 < m15Ema21 && hist < 0 && swingBias != 1)
+   if(wyckoff == -1 && swingBias != 1)
    {
-      Print("SIGNAL SELL: prix=", DoubleToStr(m15Close1,5), " ema21=", DoubleToStr(m15Ema21,5), " hist=", DoubleToStr(hist,6), " swing=", swingBias);
+      Print("SIGNAL SELL [UPTHRUST] swing=",swingBias," fvg=",fvg);
+      return -1;
+   }
+
+   // ---- SETUP CLASSIQUE : EMA21 + MACD + swing + FVG ----
+   bool buySetup  = (m15Close1 > m15Ema21 && hist > 0 && swingBias != -1);
+   bool sellSetup = (m15Close1 < m15Ema21 && hist < 0 && swingBias !=  1);
+
+   if(buySetup && fvg >= 0)
+   {
+      Print("SIGNAL BUY: ema=OK macd=",DoubleToStr(hist,6)," swing=",swingBias," fvg=",fvg);
+      return 1;
+   }
+   if(sellSetup && fvg <= 0)
+   {
+      Print("SIGNAL SELL: ema=OK macd=",DoubleToStr(hist,6)," swing=",swingBias," fvg=",fvg);
       return -1;
    }
 
