@@ -261,31 +261,29 @@ void OnTick()
 //+------------------------------------------------------------------+
 int GetSignal()
 {
-   // ---- BIAIS H4 : EMA50 vs EMA200 ----
-   double h4Ema50  = iMA(Symbol(), PERIOD_H4, EMA_Mid,  0, MODE_EMA, PRICE_CLOSE, 1);
-   double h4Ema200 = iMA(Symbol(), PERIOD_H4, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
-   if(h4Ema50 <= 0 || h4Ema200 <= 0)
-   {
-      Print("BLOQUE signal: H4 EMA invalide ema50=", h4Ema50, " ema200=", h4Ema200);
-      return 0;
-   }
-   int bias = (h4Ema50 > h4Ema200) ? 1 : -1;
-
-   // ---- ENTREE M15 : EMA21 + MACD direction -----------------------
+   // ---- DIRECTION M15 : EMA21 + MACD (pas de filtre H4) ----
    double m15Ema21  = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    double m15Close1 = iClose(Symbol(), PERIOD_M15, 1);
    if(m15Ema21 <= 0) { Print("BLOQUE signal: M15 EMA21 invalide"); return 0; }
 
-   if(bias == 1  && m15Close1 < m15Ema21) { Print("BLOQUE signal BUY: prix sous EMA21"); return 0; }
-   if(bias == -1 && m15Close1 > m15Ema21) { Print("BLOQUE signal SELL: prix sur EMA21"); return 0; }
-
    double macdMain = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_MAIN,  1);
    double macdSig  = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_SIGNAL,1);
-   if(bias == 1  && (macdMain - macdSig) <= 0) { Print("BLOQUE signal BUY: MACD negatif hist=", DoubleToStr(macdMain-macdSig,6)); return 0; }
-   if(bias == -1 && (macdMain - macdSig) >= 0) { Print("BLOQUE signal SELL: MACD positif hist=", DoubleToStr(macdMain-macdSig,6)); return 0; }
+   double hist     = macdMain - macdSig;
 
-   Print("SIGNAL OK bias=", bias, " h4ema50=", DoubleToStr(h4Ema50,5), " h4ema200=", DoubleToStr(h4Ema200,5));
-   return bias;
+   // BUY : prix au-dessus EMA21 + MACD haussier
+   if(m15Close1 > m15Ema21 && hist > 0)
+   {
+      Print("SIGNAL BUY: prix=", DoubleToStr(m15Close1,5), " ema21=", DoubleToStr(m15Ema21,5), " hist=", DoubleToStr(hist,6));
+      return 1;
+   }
+   // SELL : prix en-dessous EMA21 + MACD baissier
+   if(m15Close1 < m15Ema21 && hist < 0)
+   {
+      Print("SIGNAL SELL: prix=", DoubleToStr(m15Close1,5), " ema21=", DoubleToStr(m15Ema21,5), " hist=", DoubleToStr(hist,6));
+      return -1;
+   }
+
+   return 0;
 }
 
 //+------------------------------------------------------------------+
