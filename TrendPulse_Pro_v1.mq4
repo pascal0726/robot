@@ -20,6 +20,10 @@
 #property version   "1.00"
 #property strict
 
+//=== LOTS =========================================================
+input bool   UseFixedLot        = false;  // true = lot fixe | false = lot dynamique (% risque)
+input double FixedLot           = 0.10;   // Lot fixe si UseFixedLot = true
+
 //=== GESTION DU RISQUE =============================================
 input double RiskPercent         = 1.0;    // % du capital risque par trade (recommande 1-2%)
 input double MaxDailyLoss_Pct   = 3.0;    // Perte max journaliere en % avant arret
@@ -168,8 +172,21 @@ void OnTick()
    if(MathAbs(entry - sl)  < minStop) return;
    if(MathAbs(entry - tp1) < minStop) return;
 
-   // Calcul lot base sur % risque
-   double lot = CalcLot(slDist);
+   // Calcul lot
+   double lot;
+   if(UseFixedLot)
+   {
+      lot = FixedLot;
+      double minLot = MarketInfo(Symbol(), MODE_MINLOT);
+      double maxLot = MarketInfo(Symbol(), MODE_MAXLOT);
+      double lotStep= MarketInfo(Symbol(), MODE_LOTSTEP);
+      lot = MathFloor(lot / lotStep) * lotStep;
+      lot = MathMax(minLot, MathMin(maxLot, lot));
+   }
+   else
+   {
+      lot = CalcLot(slDist);
+   }
    if(lot <= 0) return;
 
    // Envoi ordre
@@ -210,11 +227,11 @@ void OnTick()
 //+------------------------------------------------------------------+
 int GetSignal()
 {
-   // ---- BIAIS D1 --------------------------------------------------
-   double d1Ema200 = iMA(Symbol(), PERIOD_D1, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
-   double d1Close  = iClose(Symbol(), PERIOD_D1, 1);
-   if(d1Ema200 <= 0) return 0;
-   int bias = (d1Close > d1Ema200) ? 1 : -1;
+   // ---- BIAIS H4 : EMA50 vs EMA200 (moins de donnees requises que D1) ----
+   double h4Ema50  = iMA(Symbol(), PERIOD_H4, EMA_Mid,  0, MODE_EMA, PRICE_CLOSE, 1);
+   double h4Ema200 = iMA(Symbol(), PERIOD_H4, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
+   if(h4Ema50 <= 0 || h4Ema200 <= 0) return 0;
+   int bias = (h4Ema50 > h4Ema200) ? 1 : -1;
 
    // ---- ENTREE M15 : EMA21 + MACD direction -----------------------
    double m15Ema21  = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
