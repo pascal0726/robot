@@ -316,11 +316,11 @@ void ManageTrades()
       if(type == OP_BUY)
       {
          double profit   = Bid - op;
-         double atrTP1   = atr * ATR_TP1_Mult;
          double atrTrail = atr * ATR_Trail_Mult;
+         double tp1Dist  = UseFixedSLTP ? FixedTP_Pips * GetPip() : atr * ATR_TP1_Mult;
 
          // PARTIAL CLOSE : 50% a TP1, puis trail sur le reste
-         if(!g_PartialDone && profit >= atrTP1 * 0.9)
+         if(!g_PartialDone && profit >= tp1Dist * 0.9)
          {
             double partLot = NormalizeDouble(lot * 0.5,
                (int)MathRound(MathLog(1.0 / MarketInfo(Symbol(), MODE_LOTSTEP)) / MathLog(10)));
@@ -365,11 +365,11 @@ void ManageTrades()
       else if(type == OP_SELL)
       {
          double profit   = op - Ask;
-         double atrTP1   = atr * ATR_TP1_Mult;
          double atrTrail = atr * ATR_Trail_Mult;
+         double tp1Dist  = UseFixedSLTP ? FixedTP_Pips * GetPip() : atr * ATR_TP1_Mult;
 
          // PARTIAL CLOSE : 50% a TP1
-         if(!g_PartialDone && profit >= atrTP1 * 0.9)
+         if(!g_PartialDone && profit >= tp1Dist * 0.9)
          {
             double partLot = NormalizeDouble(lot * 0.5,
                (int)MathRound(MathLog(1.0 / MarketInfo(Symbol(), MODE_LOTSTEP)) / MathLog(10)));
@@ -381,28 +381,30 @@ void ManageTrades()
                {
                   g_PartialDone = true;
                   Print("PARTIAL CLOSE SELL #", ticket, " | Lot:", partLot,
-                        " | Profit pip:", DoubleToStr(profit/pip, 1));
+                        " | Profit pip:", DoubleToStr(profit/GetPip(), 1));
                }
             }
          }
 
          // BREAK-EVEN apres partial close
-         if(UseBE && g_PartialDone && (curSL <= 0 || curSL > op))
-            newSL = op - beBuf;
+         // Pour SELL : SL doit descendre vers l entree (op+beBuf = juste au-dessus de l entree)
+         if(UseBE && g_PartialDone && curSL > op + beBuf)
+            newSL = op + beBuf;
 
-         // CHANDELIER EXIT TRAIL
-         if(g_PartialDone && curSL > 0 && curSL <= op)
+         // CHANDELIER EXIT TRAIL (apres BE : curSL proche de l entree)
+         if(g_PartialDone && curSL <= op + beBuf + GetPip())
          {
             double chandelier = Ask + atrTrail;
-            if(curSL <= 0 || chandelier < newSL - pip * 2)
+            if(chandelier < newSL - GetPip() * 2)
                newSL = chandelier;
          }
 
-         // Securite
+         // Securite : SL ne descend pas sous Ask + minStop
          double minSL = Ask + minStop;
-         if(curSL <= 0 || newSL < minSL) newSL = minSL;
+         if(newSL < minSL) newSL = minSL;
 
-         if(curSL <= 0 || newSL < curSL - pip)
+         // Modification SL si ameliore (plus bas = mieux pour SELL)
+         if(curSL <= 0 || newSL < curSL - GetPip())
          {
             if(!OrderModify(ticket, op, NormalizeDouble(newSL,Digits), curTP, 0, clrYellow))
                Print("Modify SELL err:", GetLastError());
@@ -433,7 +435,7 @@ double CalcLot(double slDist)
    double slPips = slDist / GetPip();
    double lot    = riskAmt / (slPips * pipVal);
 
-   lot = MathFloor(lot / lotStep) * lotStep;
+   lot = NormalizeDouble(MathFloor(lot / lotStep + 0.00001) * lotStep, 2);
    lot = MathMax(minLot, MathMin(maxLot, lot));
    return lot;
 }
