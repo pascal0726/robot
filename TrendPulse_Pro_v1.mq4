@@ -42,7 +42,7 @@ input double ATR_Trail_Mult     = 2.5;    // Trail TP2 = Chandelier Exit (ATR x 
 input int    ATR_Period         = 14;      // Periode ATR
 
 //=== BREAK-EVEN & PARTIAL CLOSE ===================================
-input bool   UsePartialClose    = true;   // Fermer 50% au TP1 (false = cloturer 100% au TP)
+// Partial close : automatiquement actif si UseFixedLot=false (lot dynamique)
 input bool   UseBE              = true;    // Activer break-even apres TP1
 input int    BE_Buffer_Pips     = 3;       // Tampon BE (pips au dessus/dessous entree)
 
@@ -320,8 +320,8 @@ void ManageTrades()
          double atrTrail = atr * ATR_Trail_Mult;
          double tp1Dist  = UseFixedSLTP ? FixedTP_Pips * GetPip() : atr * ATR_TP1_Mult;
 
-         // PARTIAL CLOSE : 50% a TP1, puis trail sur le reste
-         if(UsePartialClose && !g_PartialDone && profit >= tp1Dist * 0.9)
+         // PARTIAL CLOSE : 50% a TP1 si lot dynamique (UseFixedLot=false)
+         if(!UseFixedLot && !g_PartialDone && profit >= tp1Dist * 0.9)
          {
             double partLot = NormalizeDouble(lot * 0.5,
                (int)MathRound(MathLog(1.0 / MarketInfo(Symbol(), MODE_LOTSTEP)) / MathLog(10)));
@@ -369,8 +369,8 @@ void ManageTrades()
          double atrTrail = atr * ATR_Trail_Mult;
          double tp1Dist  = UseFixedSLTP ? FixedTP_Pips * GetPip() : atr * ATR_TP1_Mult;
 
-         // PARTIAL CLOSE : 50% a TP1
-         if(UsePartialClose && !g_PartialDone && profit >= tp1Dist * 0.9)
+         // PARTIAL CLOSE : 50% a TP1 si lot dynamique (UseFixedLot=false)
+         if(!UseFixedLot && !g_PartialDone && profit >= tp1Dist * 0.9)
          {
             double partLot = NormalizeDouble(lot * 0.5,
                (int)MathRound(MathLog(1.0 / MarketInfo(Symbol(), MODE_LOTSTEP)) / MathLog(10)));
