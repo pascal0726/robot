@@ -256,12 +256,88 @@ void OnTick()
 }
 
 //+------------------------------------------------------------------+
+//| DETECTION SWING HIGH / SWING LOW (interne, sans affichage)       |
+//| Retourne : 1=uptrend (HH+HL), -1=downtrend (LH+LL), 0=unclear  |
+//+------------------------------------------------------------------+
+int GetSwingBias()
+{
+   int lookback = 5;   // bougies de chaque cote pour valider un swing
+   int maxSearch = 200; // bougies max a scanner
+
+   double sh1 = 0, sh2 = 0; // 2 derniers swing highs
+   double sl1 = 0, sl2 = 0; // 2 derniers swing lows
+   int shCount = 0, slCount = 0;
+
+   for(int i = lookback + 1; i < maxSearch - lookback; i++)
+   {
+      if(shCount >= 2 && slCount >= 2) break;
+
+      double hi = iHigh(Symbol(), PERIOD_M15, i);
+      double lo = iLow (Symbol(), PERIOD_M15, i);
+
+      // Test swing high
+      if(shCount < 2)
+      {
+         bool isHigh = true;
+         for(int k = 1; k <= lookback && isHigh; k++)
+         {
+            if(iHigh(Symbol(), PERIOD_M15, i-k) >= hi) isHigh = false;
+            if(iHigh(Symbol(), PERIOD_M15, i+k) >= hi) isHigh = false;
+         }
+         if(isHigh)
+         {
+            if(shCount == 0) sh1 = hi;
+            else             sh2 = hi;
+            shCount++;
+         }
+      }
+
+      // Test swing low
+      if(slCount < 2)
+      {
+         bool isLow = true;
+         for(int k = 1; k <= lookback && isLow; k++)
+         {
+            if(iLow(Symbol(), PERIOD_M15, i-k) <= lo) isLow = false;
+            if(iLow(Symbol(), PERIOD_M15, i+k) <= lo) isLow = false;
+         }
+         if(isLow)
+         {
+            if(slCount == 0) sl1 = lo;
+            else             sl2 = lo;
+            slCount++;
+         }
+      }
+   }
+
+   if(shCount < 2 || slCount < 2)
+   {
+      Print("SwingBias: pas assez de swings detectes sh=", shCount, " sl=", slCount);
+      return 0;
+   }
+
+   bool hh = (sh1 > sh2); // dernier swing high > precedent
+   bool hl = (sl1 > sl2); // dernier swing low  > precedent
+   bool lh = (sh1 < sh2);
+   bool ll = (sl1 < sl2);
+
+   if(hh && hl) { Print("SwingBias: UPTREND HH=", DoubleToStr(sh1,5), " HL=", DoubleToStr(sl1,5)); return  1; }
+   if(lh && ll) { Print("SwingBias: DOWNTREND LH=", DoubleToStr(sh1,5), " LL=", DoubleToStr(sl1,5)); return -1; }
+
+   Print("SwingBias: RANGE / unclear");
+   return 0;
+}
+
+//+------------------------------------------------------------------+
 //| SIGNAL MULTI-TF                                                   |
 //| Retourne : 1=BUY, -1=SELL, 0=RIEN                               |
 //+------------------------------------------------------------------+
 int GetSignal()
 {
-   // ---- DIRECTION M15 : EMA21 + MACD (pas de filtre H4) ----
+   // ---- STRUCTURE DE MARCHE : swing HH/HL/LH/LL sur M15 ----
+   int swingBias = GetSwingBias();
+
+   // ---- ENTREE M15 : EMA21 + MACD ----
    double m15Ema21  = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    double m15Close1 = iClose(Symbol(), PERIOD_M15, 1);
    if(m15Ema21 <= 0) { Print("BLOQUE signal: M15 EMA21 invalide"); return 0; }
@@ -270,16 +346,16 @@ int GetSignal()
    double macdSig  = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_SIGNAL,1);
    double hist     = macdMain - macdSig;
 
-   // BUY : prix au-dessus EMA21 + MACD haussier
-   if(m15Close1 > m15Ema21 && hist > 0)
+   // BUY : prix > EMA21 + MACD haussier + structure pas baissiere (LH+LL)
+   if(m15Close1 > m15Ema21 && hist > 0 && swingBias != -1)
    {
-      Print("SIGNAL BUY: prix=", DoubleToStr(m15Close1,5), " ema21=", DoubleToStr(m15Ema21,5), " hist=", DoubleToStr(hist,6));
+      Print("SIGNAL BUY: prix=", DoubleToStr(m15Close1,5), " ema21=", DoubleToStr(m15Ema21,5), " hist=", DoubleToStr(hist,6), " swing=", swingBias);
       return 1;
    }
-   // SELL : prix en-dessous EMA21 + MACD baissier
-   if(m15Close1 < m15Ema21 && hist < 0)
+   // SELL : prix < EMA21 + MACD baissier + structure pas haussiere (HH+HL)
+   if(m15Close1 < m15Ema21 && hist < 0 && swingBias != 1)
    {
-      Print("SIGNAL SELL: prix=", DoubleToStr(m15Close1,5), " ema21=", DoubleToStr(m15Ema21,5), " hist=", DoubleToStr(hist,6));
+      Print("SIGNAL SELL: prix=", DoubleToStr(m15Close1,5), " ema21=", DoubleToStr(m15Ema21,5), " hist=", DoubleToStr(hist,6), " swing=", swingBias);
       return -1;
    }
 
