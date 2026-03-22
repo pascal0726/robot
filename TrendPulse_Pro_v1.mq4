@@ -132,8 +132,24 @@ void OnTick()
    // Affichage dashboard
    ShowDashboard();
 
+   // --- DIAGNOSTIC : etat complet a chaque bougie M15 ---
+   Print("=BAR= ", TimeToStr(barNow,TIME_DATE|TIME_MINUTES),
+         " | Bal:", DoubleToStr(AccountBalance(),2),
+         " | g_Bal0:", DoubleToStr(g_Balance0,2),
+         " | TradesToday:", g_TradesToday,
+         " | ConsecLoss:", g_ConsecLosses,
+         " | Spread:", (int)MarketInfo(Symbol(),MODE_SPREAD));
+
    // Conditions globales
-   if(!CanTrade())   return;
+   if(!CanTrade())
+   {
+      double dd = GetDailyDrawdown();
+      double dp = (g_Balance0 > 0) ? ((AccountEquity()-g_Balance0)/g_Balance0*100.0) : 0;
+      Print("CANTRADE FALSE | DD:", DoubleToStr(dd,2), "% | DProfit:", DoubleToStr(dp,2),
+            "% | TradesToday:", g_TradesToday, "/", MaxTradesPerDay,
+            " | ConsecLoss:", g_ConsecLosses, "/", MaxConsecLosses);
+      return;
+   }
    if(!FilterOK())   return;
    if(CountTrades() >= MaxOpenTrades) return;
 
@@ -141,7 +157,11 @@ void OnTick()
                    ? (int)((TimeCurrent() - g_LastTradeTime) / 60)
                    : 9999;
    int cooldown = (g_ConsecLosses > 0) ? CooldownMins * g_ConsecLosses : 0;
-   if(minsSince < cooldown) return;
+   if(minsSince < cooldown)
+   {
+      Print("COOLDOWN: ", minsSince, "min < ", cooldown, "min requis");
+      return;
+   }
 
    // Calcul signal
    int signal = GetSignal();
