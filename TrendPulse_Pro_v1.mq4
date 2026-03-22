@@ -69,10 +69,10 @@ input int    NYOpen             = 13;      // Ouverture New York (heure Paris)
 input int    NYClose            = 17;      // Fermeture New York (heure Paris)
 
 //=== FILTRES MARCHE ===============================================
-input int    SpreadMax          = 30;      // Spread max en pips
-input double ATR_VolatMax       = 2.5;     // Bloque si ATR > N x moyenne (news/spike)
+input int    SpreadMax          = 100;     // Spread max en points (100=1pip EURUSD, augmente pour XAUUSD)
+input double ATR_VolatMax       = 3.0;     // Bloque si ATR > N x moyenne (news/spike)
 input int    CooldownMins       = 30;      // Pause en minutes apres une perte
-input int    GapProtectPips     = 200;     // Bloque si gap > N pips (week-end gap)
+input int    GapProtectPips     = 500;     // Bloque si gap > N pips (week-end gap)
 
 //=== MAGIC & COMMENTAIRE ==========================================
 input int    MagicNumber        = 303030;
@@ -227,28 +227,31 @@ void OnTick()
 //+------------------------------------------------------------------+
 int GetSignal()
 {
-   // ---- BIAIS H4 : EMA50 vs EMA200 (moins de donnees requises que D1) ----
+   // ---- BIAIS H4 : EMA50 vs EMA200 ----
    double h4Ema50  = iMA(Symbol(), PERIOD_H4, EMA_Mid,  0, MODE_EMA, PRICE_CLOSE, 1);
    double h4Ema200 = iMA(Symbol(), PERIOD_H4, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
-   if(h4Ema50 <= 0 || h4Ema200 <= 0) return 0;
+   if(h4Ema50 <= 0 || h4Ema200 <= 0)
+   {
+      Print("BLOQUE signal: H4 EMA invalide ema50=", h4Ema50, " ema200=", h4Ema200);
+      return 0;
+   }
    int bias = (h4Ema50 > h4Ema200) ? 1 : -1;
 
    // ---- ENTREE M15 : EMA21 + MACD direction -----------------------
    double m15Ema21  = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    double m15Close1 = iClose(Symbol(), PERIOD_M15, 1);
-   if(m15Ema21 <= 0) return 0;
+   if(m15Ema21 <= 0) { Print("BLOQUE signal: M15 EMA21 invalide"); return 0; }
 
-   // Prix dans la bonne zone par rapport EMA21
-   if(bias == 1  && m15Close1 < m15Ema21) return 0;
-   if(bias == -1 && m15Close1 > m15Ema21) return 0;
+   if(bias == 1  && m15Close1 < m15Ema21) { Print("BLOQUE signal BUY: prix sous EMA21"); return 0; }
+   if(bias == -1 && m15Close1 > m15Ema21) { Print("BLOQUE signal SELL: prix sur EMA21"); return 0; }
 
-   // MACD confirme la direction
    double macdMain = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_MAIN,  1);
    double macdSig  = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_SIGNAL,1);
-   if(bias == 1  && (macdMain - macdSig) <= 0) return 0;
-   if(bias == -1 && (macdMain - macdSig) >= 0) return 0;
+   if(bias == 1  && (macdMain - macdSig) <= 0) { Print("BLOQUE signal BUY: MACD negatif hist=", DoubleToStr(macdMain-macdSig,6)); return 0; }
+   if(bias == -1 && (macdMain - macdSig) >= 0) { Print("BLOQUE signal SELL: MACD positif hist=", DoubleToStr(macdMain-macdSig,6)); return 0; }
 
-   return bias; // 1=BUY, -1=SELL
+   Print("SIGNAL OK bias=", bias, " h4ema50=", DoubleToStr(h4Ema50,5), " h4ema200=", DoubleToStr(h4Ema200,5));
+   return bias;
 }
 
 //+------------------------------------------------------------------+
@@ -407,23 +410,36 @@ double CalcLot(double slDist)
 //+------------------------------------------------------------------+
 bool FilterOK()
 {
-   // Spread
-   if((int)MarketInfo(Symbol(), MODE_SPREAD) > SpreadMax) return false;
+   int spread = (int)MarketInfo(Symbol(), MODE_SPREAD);
+   if(spread > SpreadMax)
+   {
+      Print("BLOQUE spread=", spread, " > max=", SpreadMax);
+      return false;
+   }
 
-   // Volatilite ATR (evite les spikes news)
    double atrCur = iATR(Symbol(), PERIOD_M15, ATR_Period, 1);
    double atrAvg = 0;
    for(int i = 2; i <= 21; i++) atrAvg += iATR(Symbol(), PERIOD_M15, ATR_Period, i);
    atrAvg /= 20.0;
-   if(atrAvg > 0 && atrCur > atrAvg * ATR_VolatMax) return false;
+   if(atrAvg > 0 && atrCur > atrAvg * ATR_VolatMax)
+   {
+      Print("BLOQUE volatilite ATR=", DoubleToStr(atrCur/GetPip(),1), " avg=", DoubleToStr(atrAvg/GetPip(),1));
+      return false;
+   }
 
-   // Gap protection (week-end, news)
    double pip  = GetPip();
    double gap  = MathAbs(iOpen(Symbol(), PERIOD_M15, 0) - iClose(Symbol(), PERIOD_M15, 1));
-   if(gap > GapProtectPips * pip) return false;
+   if(gap > GapProtectPips * pip)
+   {
+      Print("BLOQUE gap=", DoubleToStr(gap/pip,1), " > max=", GapProtectPips);
+      return false;
+   }
 
-   // Session
-   if(UseSessionFilter && !IsInSession()) return false;
+   if(UseSessionFilter && !IsInSession())
+   {
+      Print("BLOQUE hors session");
+      return false;
+   }
 
    return true;
 }
