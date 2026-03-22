@@ -56,7 +56,7 @@ input int    RSI_Sell_Min       = 35;      // RSI min pour SELL (pas survendu)
 input int    RSI_Sell_Max       = 70;      // RSI max pour SELL (pullback suffisant)
 
 //=== SESSIONS (heures France / Paris) ============================
-input bool   UseSessionFilter   = true;    // Activer filtre sessions
+input bool   UseSessionFilter   = false;   // Activer filtre sessions
 input int    BrokerGMT          = 2;       // GMT du broker
 input int    ParisGMT           = 2;       // GMT Paris (ete=2, hiver=1)
 input int    LondonOpen         = 7;       // Ouverture London (heure Paris)
@@ -210,75 +210,26 @@ void OnTick()
 //+------------------------------------------------------------------+
 int GetSignal()
 {
-   // ---- COUCHE 1 : BIAIS D1 (marche haussier ou baissier) --------
+   // ---- BIAIS D1 --------------------------------------------------
    double d1Ema200 = iMA(Symbol(), PERIOD_D1, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
    double d1Close  = iClose(Symbol(), PERIOD_D1, 1);
    if(d1Ema200 <= 0) return 0;
-   int d1Bias = (d1Close > d1Ema200) ? 1 : -1;
+   int bias = (d1Close > d1Ema200) ? 1 : -1;
 
-   // ---- COUCHE 2 : TENDANCE H4 (EMA50 vs EMA200) -----------------
-   double h4Ema50  = iMA(Symbol(), PERIOD_H4, EMA_Mid,  0, MODE_EMA, PRICE_CLOSE, 1);
-   double h4Ema200 = iMA(Symbol(), PERIOD_H4, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
-   if(h4Ema50 <= 0 || h4Ema200 <= 0) return 0;
-   int h4Trend = (h4Ema50 > h4Ema200) ? 1 : -1;
-
-   // D1 et H4 doivent etre alignes
-   if(d1Bias != h4Trend) return 0;
-   int bias = d1Bias;
-
-   // ---- COUCHE 3 : STRUCTURE H1 (EMA21 vs EMA50) -----------------
-   // Filtre H1 assoupli : on verifie juste que H1 ne contredit pas fortement le biais
-   double h1Ema21 = iMA(Symbol(), PERIOD_H1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
-   double h1Ema50 = iMA(Symbol(), PERIOD_H1, EMA_Mid,  0, MODE_EMA, PRICE_CLOSE, 1);
-   if(h1Ema21 <= 0 || h1Ema50 <= 0) return 0;
-   double h1Gap = MathAbs(h1Ema21 - h1Ema50) / GetPip();
-   // Bloque seulement si H1 va clairement dans le sens oppose (ecart > 5 pips)
-   if(bias == 1  && h1Ema21 < h1Ema50 && h1Gap > 5) return 0;
-   if(bias == -1 && h1Ema21 > h1Ema50 && h1Gap > 5) return 0;
-
-   // ---- COUCHE 4 : ENTREE M15 ------------------------------------
-
-   // 4a. Prix au-dessus/dessous EMA21 M15
+   // ---- ENTREE M15 : EMA21 + MACD direction -----------------------
    double m15Ema21  = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    double m15Close1 = iClose(Symbol(), PERIOD_M15, 1);
-   double m15Close2 = iClose(Symbol(), PERIOD_M15, 2);
    if(m15Ema21 <= 0) return 0;
-   if(bias == 1  && m15Close1 < m15Ema21) return 0; // Prix sous EMA21 -> pas BUY
-   if(bias == -1 && m15Close1 > m15Ema21) return 0; // Prix sur EMA21  -> pas SELL
 
-   // 4b. RSI M15 dans la zone de pullback (ni suracheté ni survendu)
-   double rsi = iRSI(Symbol(), PERIOD_M15, RSI_Period, PRICE_CLOSE, 1);
-   if(bias == 1  && (rsi < RSI_Buy_Min  || rsi > RSI_Buy_Max))  return 0;
-   if(bias == -1 && (rsi < RSI_Sell_Min || rsi > RSI_Sell_Max)) return 0;
+   // Prix dans la bonne zone par rapport EMA21
+   if(bias == 1  && m15Close1 < m15Ema21) return 0;
+   if(bias == -1 && m15Close1 > m15Ema21) return 0;
 
-   // 4c. MACD M15 : histogramme confirme la direction ET vient de croiser
-   double macdMain1 = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_MAIN,  1);
-   double macdMain2 = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_MAIN,  2);
-   double macdSig1  = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_SIGNAL,1);
-   double macdSig2  = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_SIGNAL,2);
-
-   if(bias == 1)
-   {
-      // Histogramme positif (direction confirmee) OU vient de croiser
-      bool macdBull = (macdMain1 - macdSig1 > 0);
-      if(!macdBull) return 0;
-   }
-   else
-   {
-      // Histogramme negatif (direction confirmee) OU vient de croiser
-      bool macdBear = (macdMain1 - macdSig1 < 0);
-      if(!macdBear) return 0;
-   }
-
-   // 4d. Confirmation bougie M15 : close dans la bonne direction
-   if(bias == 1  && m15Close1 <= m15Close2) return 0; // Bougie baissiere sur BUY
-   if(bias == -1 && m15Close1 >= m15Close2) return 0; // Bougie haussiere sur SELL
-
-   // 4e. EMA21 M15 a une pente (pas plate)
-   double m15Ema21_old = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 6);
-   double slope = (m15Ema21 - m15Ema21_old) / GetPip();
-   if(bias == 1  && slope < 0.3) return 0;
-   if(bias == -1 && slope > -0.3) return 0;
+   // MACD confirme la direction
+   double macdMain = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_MAIN,  1);
+   double macdSig  = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_SIGNAL,1);
+   if(bias == 1  && (macdMain - macdSig) <= 0) return 0;
+   if(bias == -1 && (macdMain - macdSig) >= 0) return 0;
 
    return bias; // 1=BUY, -1=SELL
 }
