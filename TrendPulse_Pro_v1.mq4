@@ -50,10 +50,10 @@ input int    MACD_Slow          = 26;      // MACD lent
 input int    MACD_Signal        = 9;       // MACD signal
 
 //=== FILTRES RSI ZONE (evite entrees extremes) ====================
-input int    RSI_Buy_Min        = 35;      // RSI min pour BUY (pullback suffisant)
-input int    RSI_Buy_Max        = 58;      // RSI max pour BUY (pas suracheté)
-input int    RSI_Sell_Min       = 42;      // RSI min pour SELL (pas survendu)
-input int    RSI_Sell_Max       = 65;      // RSI max pour SELL (pullback suffisant)
+input int    RSI_Buy_Min        = 30;      // RSI min pour BUY (pullback suffisant)
+input int    RSI_Buy_Max        = 65;      // RSI max pour BUY (pas suracheté)
+input int    RSI_Sell_Min       = 35;      // RSI min pour SELL (pas survendu)
+input int    RSI_Sell_Max       = 70;      // RSI max pour SELL (pullback suffisant)
 
 //=== SESSIONS (heures France / Paris) ============================
 input bool   UseSessionFilter   = true;    // Activer filtre sessions
@@ -227,12 +227,14 @@ int GetSignal()
    int bias = d1Bias;
 
    // ---- COUCHE 3 : STRUCTURE H1 (EMA21 vs EMA50) -----------------
+   // Filtre H1 assoupli : on verifie juste que H1 ne contredit pas fortement le biais
    double h1Ema21 = iMA(Symbol(), PERIOD_H1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    double h1Ema50 = iMA(Symbol(), PERIOD_H1, EMA_Mid,  0, MODE_EMA, PRICE_CLOSE, 1);
    if(h1Ema21 <= 0 || h1Ema50 <= 0) return 0;
-   // H1 structure doit confirmer ou etre au moins neutre
-   if(bias == 1  && h1Ema21 < h1Ema50) return 0; // H1 baissier alors qu'on cherche BUY
-   if(bias == -1 && h1Ema21 > h1Ema50) return 0; // H1 haussier alors qu'on cherche SELL
+   double h1Gap = MathAbs(h1Ema21 - h1Ema50) / GetPip();
+   // Bloque seulement si H1 va clairement dans le sens oppose (ecart > 5 pips)
+   if(bias == 1  && h1Ema21 < h1Ema50 && h1Gap > 5) return 0;
+   if(bias == -1 && h1Ema21 > h1Ema50 && h1Gap > 5) return 0;
 
    // ---- COUCHE 4 : ENTREE M15 ------------------------------------
 
@@ -257,14 +259,14 @@ int GetSignal()
 
    if(bias == 1)
    {
-      // Histogramme (main-signal) vient de passer positif
-      bool macdBull = (macdMain1 - macdSig1 > 0) && (macdMain2 - macdSig2 <= 0);
+      // Histogramme positif (direction confirmee) OU vient de croiser
+      bool macdBull = (macdMain1 - macdSig1 > 0);
       if(!macdBull) return 0;
    }
    else
    {
-      // Histogramme vient de passer negatif
-      bool macdBear = (macdMain1 - macdSig1 < 0) && (macdMain2 - macdSig2 >= 0);
+      // Histogramme negatif (direction confirmee) OU vient de croiser
+      bool macdBear = (macdMain1 - macdSig1 < 0);
       if(!macdBear) return 0;
    }
 
@@ -275,8 +277,8 @@ int GetSignal()
    // 4e. EMA21 M15 a une pente (pas plate)
    double m15Ema21_old = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 6);
    double slope = (m15Ema21 - m15Ema21_old) / GetPip();
-   if(bias == 1  && slope < 1.5) return 0;
-   if(bias == -1 && slope > -1.5) return 0;
+   if(bias == 1  && slope < 0.3) return 0;
+   if(bias == -1 && slope > -0.3) return 0;
 
    return bias; // 1=BUY, -1=SELL
 }
