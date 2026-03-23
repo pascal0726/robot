@@ -35,7 +35,7 @@ input double MaxDailyLoss_Pct   = 3.0;    // Perte max journaliere en % avant ar
 input double MaxDailyProfit_Pct = 6.0;    // Objectif profit journalier (arret quand atteint)
 input int    MaxTradesPerDay    = 3;       // Trades max par jour
 input int    MaxOpenTrades      = 1;       // 1 seul trade a la fois (discipline)
-input int    MaxConsecLosses    = 4;       // Pause si N pertes consecutives
+input int    MaxConsecLosses    = 3;       // Pause si N pertes consecutives
 
 //=== SL / TP ======================================================
 input bool   UseFixedSLTP       = false;  // true = SL/TP fixes en pips | false = ATR dynamique
@@ -46,14 +46,14 @@ input double ATR_TP1_Mult       = 4.0;    // TP securite = ATR x ce mult (si Use
 input int    ATR_Period         = 14;      // Periode ATR
 
 //=== TRAILING STOP ================================================
-input bool   UseFixedTrail      = true;   // true = trail fixe en pips | false = ATR dynamique
-input int    FixedTrail_Pips    = 30;     // Distance trail en pips (si UseFixedTrail=true)
-input double ATR_Trail_Mult     = 2.0;    // Trail = ATR x ce mult (si UseFixedTrail=false)
+input bool   UseFixedTrail      = false;  // true = trail fixe en pips | false = ATR dynamique
+input int    FixedTrail_Pips    = 50;     // Distance trail en pips (si UseFixedTrail=true)
+input double ATR_Trail_Mult     = 2.5;    // Trail = ATR x ce mult (si UseFixedTrail=false)
 
 //=== BREAK-EVEN ===================================================
 input bool   UseBE              = true;    // Activer break-even automatique
-input int    BE_Trigger_Pips    = 30;      // Profit en pips pour activer BE
-input int    BE_Buffer_Pips     = 3;       // SL = entree + N pips apres BE (securite)
+input int    BE_Trigger_Pips    = 40;      // Profit en pips pour activer BE
+input int    BE_Buffer_Pips     = 5;       // SL = entree + N pips apres BE (securite)
 
 //=== FILTRES TENDANCE ==============================================
 input int    EMA_Fast           = 21;      // EMA rapide (M15/H1 structure)
@@ -80,7 +80,7 @@ input int    NYClose            = 17;      // Fermeture New York (heure Paris)
 //=== FILTRES MARCHE ===============================================
 input int    SpreadMax          = 100;     // Spread max en points (100=1pip EURUSD, augmente pour XAUUSD)
 input double ATR_VolatMax       = 3.0;     // Bloque si ATR > N x moyenne (news/spike)
-input int    CooldownMins       = 30;      // Pause en minutes apres une perte
+input int    CooldownMins       = 60;      // Pause en minutes apres une perte
 input int    GapProtectPips     = 500;     // Bloque si gap > N pips (week-end gap)
 
 //=== MAGIC & COMMENTAIRE ==========================================
