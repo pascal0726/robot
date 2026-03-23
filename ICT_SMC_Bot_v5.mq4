@@ -60,6 +60,7 @@ input int    MinTimeBetweenTrades = 60;
 input int    MaxConsecutiveLosses = 3;
 input int    ATR_Period           = 14;
 input double ATR_MaxMultiplier    = 2.0;
+input double ShortSlopeMultiplier = 3.0;  // FIX v5: multiplicateur pente D1 pour SHORT (plus grand = plus de SHORTs)
 input int    GapProtect_Pips      = 150;
 input int    MagicNumber          = 202504;
 input string TradeComment         = "ICT_v5";
@@ -303,7 +304,7 @@ void GenerateSignal(Signal &sig)
                double d1EmaOld    = iMA(Symbol(), PERIOD_D1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 5);
                double d1SlopePips = (d1EmaFast - d1EmaOld) / GetPip();
                double d1ATR       = iATR(Symbol(), PERIOD_D1, ATR_Period, 1) / GetPip();
-               double slopeLimit  = d1ATR * 2.0; // = environ 400-600 pips sur gold
+               double slopeLimit  = d1ATR * ShortSlopeMultiplier; // configurable via paramètre
                if(d1SlopePips < slopeLimit)
                {
                   bias = "SELL";
