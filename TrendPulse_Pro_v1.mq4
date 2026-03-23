@@ -46,13 +46,13 @@ input double ATR_TP1_Mult       = 4.0;    // TP securite = ATR x ce mult (si Use
 input int    ATR_Period         = 14;      // Periode ATR
 
 //=== TRAILING STOP ================================================
-input bool   UseFixedTrail      = false;  // true = trail fixe en pips | false = ATR dynamique
-input int    FixedTrail_Pips    = 150;    // Distance trail en pips (si UseFixedTrail=true)
+input bool   UseFixedTrail      = true;   // true = trail fixe en pips | false = ATR dynamique
+input int    FixedTrail_Pips    = 30;     // Distance trail en pips (si UseFixedTrail=true)
 input double ATR_Trail_Mult     = 2.0;    // Trail = ATR x ce mult (si UseFixedTrail=false)
 
 //=== BREAK-EVEN ===================================================
 input bool   UseBE              = true;    // Activer break-even automatique
-input int    BE_Trigger_Pips    = 150;     // Profit en pips pour activer BE
+input int    BE_Trigger_Pips    = 30;      // Profit en pips pour activer BE
 input int    BE_Buffer_Pips     = 3;       // SL = entree + N pips apres BE (securite)
 
 //=== FILTRES TENDANCE ==============================================
