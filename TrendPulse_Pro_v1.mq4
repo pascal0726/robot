@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|  TrendPulse_Pro_v1.mq4                                          |
+//|  TrendPulse_Pro_v2.mq4                                          |
 //|  Strategie : Trend + RSI Pullback + MACD + Multi-TF Confluence  |
 //|                                                                  |
 //|  LOGIQUE :                                                       |
@@ -11,13 +11,15 @@
 //|  GESTION RISQUE :                                               |
 //|   - Lot dynamique (% risque fixe par trade)                     |
 //|   - SL : ATR x 1.5 (dynamique, adapte a la volatilite)         |
-//|   - TP1 : 1.5R -> ferme 50%, SL au BE                          |
-//|   - TP2 : Trail restant 50% (Chandelier Exit ATR x 2.5)        |
+//|   - Partial : 1:1 R:R -> ferme 40%, SL au BE                   |
+//|   - Trail : Chandelier Exit ATR x 2.5 sur 60% restant          |
 //|                                                                  |
+//|  v2 : Auto-detection tendance D1 (supprime ShortSlopeMultiplier)|
+//|       Partial close 1:1 R:R (au lieu de 2.2x) pour meilleur R:R|
 //|  PAS DE GRID - PAS DE MARTINGALE                                |
 //+------------------------------------------------------------------+
-#property copyright "TrendPulse Pro v1.0"
-#property version   "1.00"
+#property copyright "TrendPulse Pro v2.0"
+#property version   "2.00"
 #property strict
 
 //=== LOTS =========================================================
@@ -51,8 +53,8 @@ input int    EMA_Fast           = 21;      // EMA rapide (M15/H1 structure)
 input int    EMA_Mid            = 50;      // EMA milieu (H4 tendance)
 input int    EMA_Slow           = 200;     // EMA lente (D1 biais)
 
-//=== FILTRE PENTE D1 POUR SHORTS =================================
-input double ShortSlopeMultiplier = 3.0;  // Multiplicateur pente D1 pour SHORT (plus grand = plus de SHORTs)
+//=== FILTRE TENDANCE AUTO (D1 + H4) ==============================
+// ShortSlopeMultiplier SUPPRIME -> auto-detection (voir GetAutoTrendBias)
 
 //=== FILTRES MACD ================================================
 input int    MACD_Fast          = 12;      // MACD rapide
@@ -102,7 +104,7 @@ int OnInit()
    g_OpenTicket   = -1;
    g_PartialDone  = false;
 
-   Print("=== TrendPulse Pro v1.0 demarre ===");
+   Print("=== TrendPulse Pro v2.0 demarre ===");
    Print("Risque/trade:", RiskPercent, "% | ATR_SL x", ATR_SL_Mult,
          " | TP1 x", ATR_TP1_Mult, " | Trail x", ATR_Trail_Mult);
    Print("Session filtre:", UseSessionFilter, " | SpreadMax:", SpreadMax,
@@ -111,7 +113,7 @@ int OnInit()
    return INIT_SUCCEEDED;
 }
 
-void OnDeinit(const int r) { Print("=== TrendPulse Pro v1.0 arrete. Code:", r); }
+void OnDeinit(const int r) { Print("=== TrendPulse Pro v2.0 arrete. Code:", r); }
 
 //+------------------------------------------------------------------+
 //| TICK PRINCIPAL                                                    |
@@ -383,6 +385,56 @@ int GetWyckoffSignal()
 }
 
 //+------------------------------------------------------------------+
+//| AUTO-DETECTION FORCE DE TENDANCE D1+H4                          |
+//|  Score bull/bear sur 5 points :                                  |
+//|   +2 si pente D1 EMA21 forte (> 0.2 * D1 ATR sur 6 bougies)   |
+//|   +1 si pente D1 EMA21 positive (faible)                        |
+//|   +2 si D1 alignement parfait (EMA21 > EMA50 > EMA200)          |
+//|   +1 si H4 EMA50 > EMA200 (biais court terme)                   |
+//|  Retourne :  1 = BULL FORT (>= 4/5) -> bloque SHORT             |
+//|             -1 = BEAR FORT (>= 4/5) -> info uniquement          |
+//|              0 = neutre                                          |
+//+------------------------------------------------------------------+
+int GetAutoTrendBias()
+{
+   int bullScore = 0;
+   int bearScore = 0;
+
+   // --- Facteur 1 : pente D1 EMA21 sur 6 bougies ---
+   double d1EmaFast = iMA(Symbol(), PERIOD_D1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
+   double d1EmaOld  = iMA(Symbol(), PERIOD_D1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 6);
+   double d1ATR     = iATR(Symbol(), PERIOD_D1, ATR_Period, 1);
+   if(d1ATR <= 0) return 0;
+   double d1Slope = d1EmaFast - d1EmaOld;
+
+   if     (d1Slope >  d1ATR * 0.2) bullScore += 2;  // hausse significative
+   else if(d1Slope >  0)            bullScore += 1;  // hausse legere
+   if     (d1Slope < -d1ATR * 0.2) bearScore += 2;  // baisse significative
+   else if(d1Slope <  0)            bearScore += 1;  // baisse legere
+
+   // --- Facteur 2 : alignement D1 EMA21 > EMA50 > EMA200 ---
+   double d1EmaMid  = iMA(Symbol(), PERIOD_D1, EMA_Mid,  0, MODE_EMA, PRICE_CLOSE, 1);
+   double d1EmaSlow = iMA(Symbol(), PERIOD_D1, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
+   if(d1EmaFast > d1EmaMid  && d1EmaMid  > d1EmaSlow) bullScore += 2;
+   if(d1EmaFast < d1EmaMid  && d1EmaMid  < d1EmaSlow) bearScore += 2;
+
+   // --- Facteur 3 : H4 EMA50 vs EMA200 ---
+   double h4Mid  = iMA(Symbol(), PERIOD_H4, EMA_Mid,  0, MODE_EMA, PRICE_CLOSE, 1);
+   double h4Slow = iMA(Symbol(), PERIOD_H4, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
+   if(h4Mid > h4Slow) bullScore++;
+   else               bearScore++;
+
+   double slopePips = d1Slope / GetPip();
+   Print("AutoTrend: bull=", bullScore, " bear=", bearScore,
+         " | D1slope=", DoubleToStr(slopePips, 0), "pip",
+         " | D1ATR=", DoubleToStr(d1ATR / GetPip(), 0), "pip");
+
+   if(bullScore >= 4) return  1;   // BULL FORT -> bloque SHORT
+   if(bearScore >= 4) return -1;   // BEAR FORT
+   return 0;
+}
+
+//+------------------------------------------------------------------+
 //| SIGNAL PRINCIPAL                                                  |
 //| Retourne : 1=BUY, -1=SELL, 0=RIEN                               |
 //+------------------------------------------------------------------+
@@ -429,18 +481,14 @@ int GetSignal()
    }
    if(sellSetup && fvg <= 0)
    {
-      // Filtre pente D1 : bloque SHORT si tendance D1 trop haussiere
-      double d1EmaFast   = iMA(Symbol(), PERIOD_D1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
-      double d1EmaOld    = iMA(Symbol(), PERIOD_D1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 5);
-      double d1ATR       = iATR(Symbol(), PERIOD_D1, ATR_Period, 1) / GetPip();
-      double d1SlopePips = (d1EmaFast - d1EmaOld) / GetPip();
-      double slopeLimit  = d1ATR * ShortSlopeMultiplier;
-      if(d1SlopePips >= slopeLimit)
+      // Filtre auto : bloque SHORT si tendance D1+H4 fortement haussiere
+      int autoTrend = GetAutoTrendBias();
+      if(autoTrend == 1)
       {
-         Print("SELL bloque: pente D1 trop forte (",DoubleToStr(d1SlopePips,0)," >= ",DoubleToStr(slopeLimit,0),")");
+         Print("SELL bloque: tendance D1 BULL FORT (auto-detection)");
          return 0;
       }
-      Print("SIGNAL SELL: ema=OK macd=",DoubleToStr(hist,6)," swing=",swingBias," fvg=",fvg," pente=",DoubleToStr(d1SlopePips,0));
+      Print("SIGNAL SELL: ema=OK macd=",DoubleToStr(hist,6)," swing=",swingBias," fvg=",fvg," autoTrend=",autoTrend);
       return -1;
    }
 
@@ -479,10 +527,12 @@ void ManageTrades()
          double atrTrail = atr * ATR_Trail_Mult;
          double tp1Dist  = UseFixedSLTP ? FixedTP_Pips * GetPip() : atr * ATR_TP1_Mult;
 
-         // PARTIAL CLOSE : 50% a TP1 si lot dynamique (UseFixedLot=false)
-         if(!UseFixedLot && !g_PartialDone && profit >= tp1Dist * 0.9)
+         // PARTIAL CLOSE : 40% a 1:1 R:R (profit = distance SL)
+         // Declenchement plus tot = capture plus de trades gagnants
+         double partialTrigger = UseFixedSLTP ? FixedSL_Pips * GetPip() : atr * ATR_SL_Mult;
+         if(!UseFixedLot && !g_PartialDone && profit >= partialTrigger * 0.95)
          {
-            double partLot = NormalizeDouble(lot * 0.5,
+            double partLot = NormalizeDouble(lot * 0.4,
                (int)MathRound(MathLog(1.0 / MarketInfo(Symbol(), MODE_LOTSTEP)) / MathLog(10)));
             partLot = MathMax(partLot, MarketInfo(Symbol(), MODE_MINLOT));
 
@@ -492,7 +542,7 @@ void ManageTrades()
                {
                   g_PartialDone = true;
                   Print("PARTIAL CLOSE BUY #", ticket, " | Lot:", partLot,
-                        " | Profit pip:", DoubleToStr(profit/pip, 1));
+                        " | 1:1 R:R | Profit pip:", DoubleToStr(profit/pip, 1));
                }
             }
          }
@@ -528,10 +578,12 @@ void ManageTrades()
          double atrTrail = atr * ATR_Trail_Mult;
          double tp1Dist  = UseFixedSLTP ? FixedTP_Pips * GetPip() : atr * ATR_TP1_Mult;
 
-         // PARTIAL CLOSE : 50% a TP1 si lot dynamique (UseFixedLot=false)
-         if(!UseFixedLot && !g_PartialDone && profit >= tp1Dist * 0.9)
+         // PARTIAL CLOSE : 40% a 1:1 R:R (profit = distance SL)
+         // Declenchement plus tot = capture plus de trades gagnants
+         double partialTrigger = UseFixedSLTP ? FixedSL_Pips * GetPip() : atr * ATR_SL_Mult;
+         if(!UseFixedLot && !g_PartialDone && profit >= partialTrigger * 0.95)
          {
-            double partLot = NormalizeDouble(lot * 0.5,
+            double partLot = NormalizeDouble(lot * 0.4,
                (int)MathRound(MathLog(1.0 / MarketInfo(Symbol(), MODE_LOTSTEP)) / MathLog(10)));
             partLot = MathMax(partLot, MarketInfo(Symbol(), MODE_MINLOT));
 
@@ -541,7 +593,7 @@ void ManageTrades()
                {
                   g_PartialDone = true;
                   Print("PARTIAL CLOSE SELL #", ticket, " | Lot:", partLot,
-                        " | Profit pip:", DoubleToStr(profit/GetPip(), 1));
+                        " | 1:1 R:R | Profit pip:", DoubleToStr(profit/GetPip(), 1));
                }
             }
          }
@@ -754,16 +806,20 @@ void ShowDashboard()
    double h4F     = iMA(Symbol(),PERIOD_H4,EMA_Mid, 0,MODE_EMA,PRICE_CLOSE,1);
    double h4S     = iMA(Symbol(),PERIOD_H4,EMA_Slow,0,MODE_EMA,PRICE_CLOSE,1);
    string h4Trend = (h4F > h4S) ? "BULL" : "BEAR";
+   int    autoB   = GetAutoTrendBias();
+   string autoBStr= (autoB ==  1) ? "BULL FORT (SHORT bloque)" :
+                    (autoB == -1) ? "BEAR FORT" : "Neutre";
 
    bool   inSess  = IsInSession();
    string sessStr = inSess ? "ACTIF" : "HORS SESSION";
 
    Comment(
-      "=== TrendPulse Pro v1.0 ===\n",
+      "=== TrendPulse Pro v2.0 ===\n",
       "Heure France: ", parisH, "h", dt.min, " | Session: ", sessStr, "\n",
       "---\n",
       "D1 Biais : ", d1Bias, "\n",
       "H4 Tendance : ", h4Trend, "\n",
+      "Auto-Tendance : ", autoBStr, "\n",
       "ATR M15 : ", DoubleToStr(atr/pip, 1), " pips\n",
       "Spread : ", spread, " / ", SpreadMax, " pips\n",
       "---\n",
