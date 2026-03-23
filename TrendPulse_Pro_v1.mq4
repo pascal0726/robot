@@ -28,7 +28,7 @@ input double FixedLot           = 0.10;   // Lot fixe si UseFixedLot = true
 input double RiskPercent         = 1.0;    // % du capital risque par trade (recommande 1-2%)
 input double MaxDailyLoss_Pct   = 3.0;    // Perte max journaliere en % avant arret
 input double MaxDailyProfit_Pct = 6.0;    // Objectif profit journalier (arret quand atteint)
-input int    MaxTradesPerDay    = 4;       // Trades max par jour
+input int    MaxTradesPerDay    = 3;       // Trades max par jour
 input int    MaxOpenTrades      = 1;       // 1 seul trade a la fois (discipline)
 input int    MaxConsecLosses    = 4;       // Pause si N pertes consecutives
 
@@ -51,17 +51,10 @@ input int    EMA_Fast           = 21;      // EMA rapide (M15/H1 structure)
 input int    EMA_Mid            = 50;      // EMA milieu (H4 tendance)
 input int    EMA_Slow           = 200;     // EMA lente (D1 biais)
 
-//=== FILTRES RSI + MACD ==========================================
-input int    RSI_Period         = 14;      // Periode RSI
+//=== FILTRES MACD ================================================
 input int    MACD_Fast          = 12;      // MACD rapide
 input int    MACD_Slow          = 26;      // MACD lent
 input int    MACD_Signal        = 9;       // MACD signal
-
-//=== FILTRES RSI ZONE (evite entrees extremes) ====================
-input int    RSI_Buy_Min        = 30;      // RSI min pour BUY (pullback suffisant)
-input int    RSI_Buy_Max        = 65;      // RSI max pour BUY (pas suracheté)
-input int    RSI_Sell_Min       = 35;      // RSI min pour SELL (pas survendu)
-input int    RSI_Sell_Max       = 70;      // RSI max pour SELL (pullback suffisant)
 
 //=== SESSIONS (heures France / Paris) ============================
 input bool   UseSessionFilter   = false;   // Activer filtre sessions
