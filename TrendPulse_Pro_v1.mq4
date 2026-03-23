@@ -40,16 +40,20 @@ input int    MaxConsecLosses    = 4;       // Pause si N pertes consecutives
 //=== SL / TP ======================================================
 input bool   UseFixedSLTP       = false;  // true = SL/TP fixes en pips | false = ATR dynamique
 input int    FixedSL_Pips       = 150;    // SL fixe en pips (si UseFixedSLTP=true)
-input int    FixedTP_Pips       = 300;    // TP fixe en pips (si UseFixedSLTP=true)
-input double ATR_SL_Mult        = 1.5;    // SL = ATR x ce multiplicateur (si UseFixedSLTP=false)
-input double ATR_TP1_Mult       = 4.0;    // TP securite = ATR x ce mult (trail gere la sortie principale)
-input double ATR_Trail_Mult     = 2.0;    // Chandelier Exit = ATR x ce mult (trail lot entier)
+input int    FixedTP_Pips       = 400;    // TP securite en pips (si UseFixedSLTP=true)
+input double ATR_SL_Mult        = 1.5;    // SL = ATR x ce mult (si UseFixedSLTP=false)
+input double ATR_TP1_Mult       = 4.0;    // TP securite = ATR x ce mult (si UseFixedSLTP=false)
 input int    ATR_Period         = 14;      // Periode ATR
+
+//=== TRAILING STOP ================================================
+input bool   UseFixedTrail      = false;  // true = trail fixe en pips | false = ATR dynamique
+input int    FixedTrail_Pips    = 150;    // Distance trail en pips (si UseFixedTrail=true)
+input double ATR_Trail_Mult     = 2.0;    // Trail = ATR x ce mult (si UseFixedTrail=false)
 
 //=== BREAK-EVEN ===================================================
 input bool   UseBE              = true;    // Activer break-even automatique
-input int    BE_Trigger_Pips    = 150;     // Profit en pips pour activer BE (ex: 15 pips sur XAUUSD = 150)
-input int    BE_Buffer_Pips     = 3;       // Tampon BE : SL = entree + N pips (securite)
+input int    BE_Trigger_Pips    = 150;     // Profit en pips pour activer BE
+input int    BE_Buffer_Pips     = 3;       // SL = entree + N pips apres BE (securite)
 
 //=== FILTRES TENDANCE ==============================================
 input int    EMA_Fast           = 21;      // EMA rapide (M15/H1 structure)
@@ -106,9 +110,10 @@ int OnInit()
    g_OpenTicket   = -1;
 
    Print("=== TrendPulse Pro v3.0 demarre ===");
-   Print("Risque/trade:", RiskPercent, "% | ATR_SL x", ATR_SL_Mult,
-         " | TP securite x", ATR_TP1_Mult, " | Trail x", ATR_Trail_Mult,
-         " | BE trigger:", BE_Trigger_Pips, "pips");
+   Print("Risque/trade:", RiskPercent, "%",
+         " | SL:", (UseFixedSLTP ? (string)FixedSL_Pips+"pips" : "ATRx"+(string)ATR_SL_Mult),
+         " | Trail:", (UseFixedTrail ? (string)FixedTrail_Pips+"pips" : "ATRx"+(string)ATR_Trail_Mult),
+         " | BE trigger:", BE_Trigger_Pips, "pips+", BE_Buffer_Pips, "buf");
    Print("Session filtre:", UseSessionFilter, " | SpreadMax:", SpreadMax,
          " | MaxDailyLoss:", MaxDailyLoss_Pct, "%");
 
@@ -532,7 +537,7 @@ void ManageTrades()
 
       double atr = iATR(Symbol(), PERIOD_M15, ATR_Period, 1);
       if(atr <= 0) continue;
-      double atrTrail = atr * ATR_Trail_Mult;
+      double atrTrail = UseFixedTrail ? FixedTrail_Pips * pip : atr * ATR_Trail_Mult;
 
       // --- BUY ---
       if(type == OP_BUY)
@@ -799,8 +804,8 @@ void ShowDashboard()
       "ATR M15 : ", DoubleToStr(atr/pip, 1), " pips\n",
       "Spread : ", spread, " / ", SpreadMax, " pips\n",
       "---\n",
-      "BE trigger : ", BE_Trigger_Pips, " pips | Buffer : +", BE_Buffer_Pips, " pips\n",
-      "Trail : ATR x", ATR_Trail_Mult, " | TP securite : ATR x", ATR_TP1_Mult, "\n",
+      "BE trigger : +", BE_Trigger_Pips, " pips | Buffer : +", BE_Buffer_Pips, " pips\n",
+      "Trail : ", (UseFixedTrail ? (string)FixedTrail_Pips+"pips fixe" : "ATRx"+(string)ATR_Trail_Mult+" dyn"), "\n",
       "---\n",
       "Trades jour : ", g_TradesToday, " / ", MaxTradesPerDay, "\n",
       "Pertes cons : ", g_ConsecLosses, " / ", MaxConsecLosses, "\n",
