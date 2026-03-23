@@ -51,6 +51,9 @@ input int    EMA_Fast           = 21;      // EMA rapide (M15/H1 structure)
 input int    EMA_Mid            = 50;      // EMA milieu (H4 tendance)
 input int    EMA_Slow           = 200;     // EMA lente (D1 biais)
 
+//=== FILTRE PENTE D1 POUR SHORTS =================================
+input double ShortSlopeMultiplier = 3.0;  // Multiplicateur pente D1 pour SHORT (plus grand = plus de SHORTs)
+
 //=== FILTRES MACD ================================================
 input int    MACD_Fast          = 12;      // MACD rapide
 input int    MACD_Slow          = 26;      // MACD lent
@@ -426,7 +429,18 @@ int GetSignal()
    }
    if(sellSetup && fvg <= 0)
    {
-      Print("SIGNAL SELL: ema=OK macd=",DoubleToStr(hist,6)," swing=",swingBias," fvg=",fvg);
+      // Filtre pente D1 : bloque SHORT si tendance D1 trop haussiere
+      double d1EmaFast   = iMA(Symbol(), PERIOD_D1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
+      double d1EmaOld    = iMA(Symbol(), PERIOD_D1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 5);
+      double d1ATR       = iATR(Symbol(), PERIOD_D1, ATR_Period, 1) / GetPip();
+      double d1SlopePips = (d1EmaFast - d1EmaOld) / GetPip();
+      double slopeLimit  = d1ATR * ShortSlopeMultiplier;
+      if(d1SlopePips >= slopeLimit)
+      {
+         Print("SELL bloque: pente D1 trop forte (",DoubleToStr(d1SlopePips,0)," >= ",DoubleToStr(slopeLimit,0),")");
+         return 0;
+      }
+      Print("SIGNAL SELL: ema=OK macd=",DoubleToStr(hist,6)," swing=",swingBias," fvg=",fvg," pente=",DoubleToStr(d1SlopePips,0));
       return -1;
    }
 
