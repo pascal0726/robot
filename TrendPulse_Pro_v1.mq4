@@ -741,7 +741,6 @@ void ShowDashboard()
    double h4S     = iMA(Symbol(),PERIOD_H4,EMA_Slow,0,MODE_EMA,PRICE_CLOSE,1);
    string h4Trend = (h4F > h4S) ? "BULL" : "BEAR";
 
-   double rsi     = iRSI(Symbol(), PERIOD_M15, RSI_Period, PRICE_CLOSE, 1);
    bool   inSess  = IsInSession();
    string sessStr = inSess ? "ACTIF" : "HORS SESSION";
 
@@ -751,7 +750,6 @@ void ShowDashboard()
       "---\n",
       "D1 Biais : ", d1Bias, "\n",
       "H4 Tendance : ", h4Trend, "\n",
-      "RSI M15 : ", DoubleToStr(rsi, 1), "\n",
       "ATR M15 : ", DoubleToStr(atr/pip, 1), " pips\n",
       "Spread : ", spread, " / ", SpreadMax, " pips\n",
       "---\n",
