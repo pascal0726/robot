@@ -1,25 +1,28 @@
 //+------------------------------------------------------------------+
-//|  TrendPulse_Pro_v2.mq4                                          |
-//|  Strategie : Trend + RSI Pullback + MACD + Multi-TF Confluence  |
+//|  TrendPulse_Pro_v3.mq4                                          |
+//|  Strategie : Trend + MACD + Multi-TF Confluence                 |
 //|                                                                  |
 //|  LOGIQUE :                                                       |
-//|   D1  -> Biais de marche (EMA200 direction)                     |
+//|   D1  -> Biais de marche (EMA200 + auto-detection tendance)     |
 //|   H4  -> Tendance principale (EMA50/200 alignement)             |
-//|   H1  -> Structure (EMA21/50 alignement + swing)                |
-//|   M15 -> Entree precise (RSI pullback + MACD + EMA21)           |
+//|   H1  -> Confirmation (H1 close > EMA21)                        |
+//|   M15 -> Entree precise (MACD + EMA21 + Swing/FVG/Wyckoff)     |
 //|                                                                  |
 //|  GESTION RISQUE :                                               |
 //|   - Lot dynamique (% risque fixe par trade)                     |
-//|   - SL : ATR x 1.5 (dynamique, adapte a la volatilite)         |
-//|   - Partial : 1:1 R:R -> ferme 40%, SL au BE                   |
-//|   - Trail : Chandelier Exit ATR x 2.5 sur 60% restant          |
+//|   - SL : ATR x 1.5                                              |
+//|   - BE  : active quand profit >= BE_Trigger_Pips               |
+//|   - Trail : Chandelier Exit ATR x 2.0 (lot ENTIER, pas partial)|
+//|   - TP securite : ATR x 4.0 (filet de securite)                |
 //|                                                                  |
-//|  v2 : Auto-detection tendance D1 (supprime ShortSlopeMultiplier)|
-//|       Partial close 1:1 R:R (au lieu de 2.2x) pour meilleur R:R|
+//|  v3 : Suppression partial close (bug cascade + mauvais R:R)     |
+//|       Trail lot entier = meilleurs gains sur bonnes entrees      |
+//|       BE reglable en pips (BE_Trigger_Pips)                     |
+//|       Filtre H1 EMA21 ajoute                                    |
 //|  PAS DE GRID - PAS DE MARTINGALE                                |
 //+------------------------------------------------------------------+
-#property copyright "TrendPulse Pro v2.0"
-#property version   "2.00"
+#property copyright "TrendPulse Pro v3.0"
+#property version   "3.00"
 #property strict
 
 //=== LOTS =========================================================
@@ -39,14 +42,14 @@ input bool   UseFixedSLTP       = false;  // true = SL/TP fixes en pips | false 
 input int    FixedSL_Pips       = 150;    // SL fixe en pips (si UseFixedSLTP=true)
 input int    FixedTP_Pips       = 300;    // TP fixe en pips (si UseFixedSLTP=true)
 input double ATR_SL_Mult        = 1.5;    // SL = ATR x ce multiplicateur (si UseFixedSLTP=false)
-input double ATR_TP1_Mult       = 2.2;    // TP1 = ATR x ce multiplicateur (si UseFixedSLTP=false)
-input double ATR_Trail_Mult     = 2.5;    // Trail TP2 = Chandelier Exit (ATR x mult)
+input double ATR_TP1_Mult       = 4.0;    // TP securite = ATR x ce mult (trail gere la sortie principale)
+input double ATR_Trail_Mult     = 2.0;    // Chandelier Exit = ATR x ce mult (trail lot entier)
 input int    ATR_Period         = 14;      // Periode ATR
 
-//=== BREAK-EVEN & PARTIAL CLOSE ===================================
-// Partial close : automatiquement actif si UseFixedLot=false (lot dynamique)
-input bool   UseBE              = true;    // Activer break-even apres TP1
-input int    BE_Buffer_Pips     = 3;       // Tampon BE (pips au dessus/dessous entree)
+//=== BREAK-EVEN ===================================================
+input bool   UseBE              = true;    // Activer break-even automatique
+input int    BE_Trigger_Pips    = 150;     // Profit en pips pour activer BE (ex: 15 pips sur XAUUSD = 150)
+input int    BE_Buffer_Pips     = 3;       // Tampon BE : SL = entree + N pips (securite)
 
 //=== FILTRES TENDANCE ==============================================
 input int    EMA_Fast           = 21;      // EMA rapide (M15/H1 structure)
@@ -88,7 +91,6 @@ datetime g_LastDayReset  = 0;    // Derniere reinit journaliere
 datetime g_LastBarTime   = 0;    // Derniere bougie M15 traitee
 datetime g_LastTradeTime = 0;    // Heure du dernier trade
 int      g_LastTicket    = -1;   // Dernier ticket histoire
-bool     g_PartialDone   = false;// Partial close effectue sur trade courant
 int      g_OpenTicket    = -1;   // Ticket du trade ouvert
 
 //+------------------------------------------------------------------+
@@ -102,18 +104,18 @@ int OnInit()
    g_ConsecLosses = 0;
    g_LastTicket   = -1;
    g_OpenTicket   = -1;
-   g_PartialDone  = false;
 
-   Print("=== TrendPulse Pro v2.0 demarre ===");
+   Print("=== TrendPulse Pro v3.0 demarre ===");
    Print("Risque/trade:", RiskPercent, "% | ATR_SL x", ATR_SL_Mult,
-         " | TP1 x", ATR_TP1_Mult, " | Trail x", ATR_Trail_Mult);
+         " | TP securite x", ATR_TP1_Mult, " | Trail x", ATR_Trail_Mult,
+         " | BE trigger:", BE_Trigger_Pips, "pips");
    Print("Session filtre:", UseSessionFilter, " | SpreadMax:", SpreadMax,
          " | MaxDailyLoss:", MaxDailyLoss_Pct, "%");
 
    return INIT_SUCCEEDED;
 }
 
-void OnDeinit(const int r) { Print("=== TrendPulse Pro v2.0 arrete. Code:", r); }
+void OnDeinit(const int r) { Print("=== TrendPulse Pro v3.0 arrete. Code:", r); }
 
 //+------------------------------------------------------------------+
 //| TICK PRINCIPAL                                                    |
@@ -244,12 +246,12 @@ void OnTick()
       g_TradesToday++;
       g_LastTradeTime = TimeCurrent();
       g_OpenTicket    = ticket;
-      g_PartialDone   = false;
       Print("TRADE #", ticket, " | ", dir, " | Lot:", lot,
             " | Entry:", entry,
             " | SL:", NormalizeDouble(sl,Digits),
-            " | TP1:", NormalizeDouble(tp1,Digits),
-            " | ATR:", DoubleToStr(atr/GetPip(),1), "pips");
+            " | TP securite:", NormalizeDouble(tp1,Digits),
+            " | ATR:", DoubleToStr(atr/GetPip(),1), "pips",
+            " | BE trigger:", BE_Trigger_Pips, "pips");
    }
 }
 
@@ -449,7 +451,13 @@ int GetSignal()
    // ---- 3. FVG confirmation ----
    int fvg = GetFVGBias();
 
-   // ---- 4. ENTREE M15 : EMA21 + MACD ----
+   // ---- 4. CONFIRMATION H1 : close > EMA21 ----
+   double h1Close1 = iClose(Symbol(), PERIOD_H1, 1);
+   double h1Ema21  = iMA(Symbol(), PERIOD_H1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
+   bool   h1Bull   = (h1Close1 > h1Ema21);
+   bool   h1Bear   = (h1Close1 < h1Ema21);
+
+   // ---- 5. ENTREE M15 : EMA21 + MACD ----
    double m15Ema21  = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    double m15Close1 = iClose(Symbol(), PERIOD_M15, 1);
    if(m15Ema21 <= 0) { Print("BLOQUE: M15 EMA21 invalide"); return 0; }
@@ -458,21 +466,21 @@ int GetSignal()
    double macdSig  = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_SIGNAL,1);
    double hist     = macdMain - macdSig;
 
-   // ---- WYCKOFF : override fort si structure confirme ----
-   if(wyckoff == 1 && swingBias != -1)
+   // ---- WYCKOFF : override fort si H1 + structure confirment ----
+   if(wyckoff == 1 && swingBias != -1 && h1Bull)
    {
-      Print("SIGNAL BUY [SPRING] swing=",swingBias," fvg=",fvg);
+      Print("SIGNAL BUY [SPRING] swing=",swingBias," fvg=",fvg," h1=OK");
       return 1;
    }
-   if(wyckoff == -1 && swingBias != 1)
+   if(wyckoff == -1 && swingBias != 1 && h1Bear)
    {
-      Print("SIGNAL SELL [UPTHRUST] swing=",swingBias," fvg=",fvg);
+      Print("SIGNAL SELL [UPTHRUST] swing=",swingBias," fvg=",fvg," h1=OK");
       return -1;
    }
 
-   // ---- SETUP CLASSIQUE : EMA21 + MACD + swing + FVG ----
-   bool buySetup  = (m15Close1 > m15Ema21 && hist > 0 && swingBias != -1);
-   bool sellSetup = (m15Close1 < m15Ema21 && hist < 0 && swingBias !=  1);
+   // ---- SETUP CLASSIQUE : EMA21 + MACD + swing + FVG + H1 ----
+   bool buySetup  = (m15Close1 > m15Ema21 && hist > 0 && swingBias != -1 && h1Bull);
+   bool sellSetup = (m15Close1 < m15Ema21 && hist < 0 && swingBias !=  1 && h1Bear);
 
    if(buySetup && fvg >= 0)
    {
@@ -496,12 +504,18 @@ int GetSignal()
 }
 
 //+------------------------------------------------------------------+
-//| GESTION TRADES (trailing + partial close)                        |
+//| GESTION TRADES (BE configurable + trailing chandelier)          |
+//|  LOGIQUE :                                                       |
+//|   Phase 1 : SL reste a sa position initiale                     |
+//|   Phase 2 : profit >= BE_Trigger_Pips -> SL monte au BE         |
+//|   Phase 3 : SL au BE -> chandelier trail (ATR x Trail_Mult)     |
+//|  PAS DE PARTIAL CLOSE -> lot entier sur toute la duree          |
 //+------------------------------------------------------------------+
 void ManageTrades()
 {
    double pip     = GetPip();
    double beBuf   = BE_Buffer_Pips * pip;
+   double beTrig  = BE_Trigger_Pips * pip;   // distance profit pour activer BE
    double minStop = MarketInfo(Symbol(), MODE_STOPLEVEL) * Point;
 
    for(int i = OrdersTotal() - 1; i >= 0; i--)
@@ -514,56 +528,38 @@ void ManageTrades()
       double op     = OrderOpenPrice();
       double curSL  = OrderStopLoss();
       double curTP  = OrderTakeProfit();
-      double lot    = OrderLots();
       double newSL  = curSL;
 
       double atr = iATR(Symbol(), PERIOD_M15, ATR_Period, 1);
       if(atr <= 0) continue;
+      double atrTrail = atr * ATR_Trail_Mult;
 
       // --- BUY ---
       if(type == OP_BUY)
       {
-         double profit   = Bid - op;
-         double atrTrail = atr * ATR_Trail_Mult;
-         double tp1Dist  = UseFixedSLTP ? FixedTP_Pips * GetPip() : atr * ATR_TP1_Mult;
+         double profit = Bid - op;
 
-         // PARTIAL CLOSE : 40% a 1:1 R:R (profit = distance SL)
-         // Declenchement plus tot = capture plus de trades gagnants
-         double partialTrigger = UseFixedSLTP ? FixedSL_Pips * GetPip() : atr * ATR_SL_Mult;
-         if(!UseFixedLot && !g_PartialDone && profit >= partialTrigger * 0.95)
+         // Phase 2 : activer BE quand profit >= BE_Trigger_Pips
+         if(UseBE && profit >= beTrig && curSL < op + beBuf)
          {
-            double partLot = NormalizeDouble(lot * 0.4,
-               (int)MathRound(MathLog(1.0 / MarketInfo(Symbol(), MODE_LOTSTEP)) / MathLog(10)));
-            partLot = MathMax(partLot, MarketInfo(Symbol(), MODE_MINLOT));
-
-            if(partLot < lot)
-            {
-               if(OrderClose(ticket, partLot, Bid, 10, clrYellow))
-               {
-                  g_PartialDone = true;
-                  Print("PARTIAL CLOSE BUY #", ticket, " | Lot:", partLot,
-                        " | 1:1 R:R | Profit pip:", DoubleToStr(profit/pip, 1));
-               }
-            }
+            newSL = op + beBuf;
+            if(curSL < op) Print("BE active BUY #", ticket,
+               " | Profit:", DoubleToStr(profit/pip,1), "pip | SL->", DoubleToStr(newSL,Digits));
          }
 
-         // BREAK-EVEN apres partial close
-         if(UseBE && g_PartialDone && curSL < op)
-            newSL = op + beBuf;
-
-         // CHANDELIER EXIT TRAIL (apres BE)
-         if(g_PartialDone && curSL >= op)
+         // Phase 3 : chandelier trail une fois SL au niveau BE (ou mieux)
+         if(curSL >= op - pip)
          {
             double chandelier = Bid - atrTrail;
             if(chandelier > newSL + pip * 2)
                newSL = chandelier;
          }
 
-         // Securite : SL ne depasse pas Bid
+         // Securite : SL ne depasse pas Bid - minStop
          double maxSL = Bid - minStop;
          if(newSL > maxSL) newSL = maxSL;
 
-         // Modification SL si ameliore
+         // Appliquer si ameliore
          if(newSL > curSL + pip)
          {
             if(!OrderModify(ticket, op, NormalizeDouble(newSL,Digits), curTP, 0, clrYellow))
@@ -574,40 +570,21 @@ void ManageTrades()
       // --- SELL ---
       else if(type == OP_SELL)
       {
-         double profit   = op - Ask;
-         double atrTrail = atr * ATR_Trail_Mult;
-         double tp1Dist  = UseFixedSLTP ? FixedTP_Pips * GetPip() : atr * ATR_TP1_Mult;
+         double profit = op - Ask;
 
-         // PARTIAL CLOSE : 40% a 1:1 R:R (profit = distance SL)
-         // Declenchement plus tot = capture plus de trades gagnants
-         double partialTrigger = UseFixedSLTP ? FixedSL_Pips * GetPip() : atr * ATR_SL_Mult;
-         if(!UseFixedLot && !g_PartialDone && profit >= partialTrigger * 0.95)
+         // Phase 2 : activer BE quand profit >= BE_Trigger_Pips
+         if(UseBE && profit >= beTrig && curSL > op - beBuf)
          {
-            double partLot = NormalizeDouble(lot * 0.4,
-               (int)MathRound(MathLog(1.0 / MarketInfo(Symbol(), MODE_LOTSTEP)) / MathLog(10)));
-            partLot = MathMax(partLot, MarketInfo(Symbol(), MODE_MINLOT));
-
-            if(partLot < lot)
-            {
-               if(OrderClose(ticket, partLot, Ask, 10, clrYellow))
-               {
-                  g_PartialDone = true;
-                  Print("PARTIAL CLOSE SELL #", ticket, " | Lot:", partLot,
-                        " | 1:1 R:R | Profit pip:", DoubleToStr(profit/GetPip(), 1));
-               }
-            }
+            newSL = op - beBuf;
+            if(curSL > op) Print("BE active SELL #", ticket,
+               " | Profit:", DoubleToStr(profit/pip,1), "pip | SL->", DoubleToStr(newSL,Digits));
          }
 
-         // BREAK-EVEN apres partial close
-         // Pour SELL : SL doit descendre vers l entree (op+beBuf = juste au-dessus de l entree)
-         if(UseBE && g_PartialDone && curSL > op + beBuf)
-            newSL = op + beBuf;
-
-         // CHANDELIER EXIT TRAIL (apres BE : curSL proche de l entree)
-         if(g_PartialDone && curSL <= op + beBuf + GetPip())
+         // Phase 3 : chandelier trail une fois SL au niveau BE (ou mieux)
+         if(curSL <= op + pip)
          {
             double chandelier = Ask + atrTrail;
-            if(chandelier < newSL - GetPip() * 2)
+            if(chandelier < newSL - pip * 2)
                newSL = chandelier;
          }
 
@@ -615,8 +592,8 @@ void ManageTrades()
          double minSL = Ask + minStop;
          if(newSL < minSL) newSL = minSL;
 
-         // Modification SL si ameliore (plus bas = mieux pour SELL)
-         if(curSL <= 0 || newSL < curSL - GetPip())
+         // Appliquer si ameliore (plus bas = mieux pour SELL)
+         if(curSL <= 0 || newSL < curSL - pip)
          {
             if(!OrderModify(ticket, op, NormalizeDouble(newSL,Digits), curTP, 0, clrYellow))
                Print("Modify SELL err:", GetLastError());
@@ -749,7 +726,6 @@ void UpdateHistory()
       if(OrderTicket() == g_LastTicket) break;
 
       g_LastTicket    = OrderTicket();
-      g_PartialDone   = false; // Reset pour prochain trade
       g_OpenTicket    = -1;
 
       double result = OrderProfit() + OrderSwap() + OrderCommission();
@@ -814,7 +790,7 @@ void ShowDashboard()
    string sessStr = inSess ? "ACTIF" : "HORS SESSION";
 
    Comment(
-      "=== TrendPulse Pro v2.0 ===\n",
+      "=== TrendPulse Pro v3.0 ===\n",
       "Heure France: ", parisH, "h", dt.min, " | Session: ", sessStr, "\n",
       "---\n",
       "D1 Biais : ", d1Bias, "\n",
@@ -822,6 +798,9 @@ void ShowDashboard()
       "Auto-Tendance : ", autoBStr, "\n",
       "ATR M15 : ", DoubleToStr(atr/pip, 1), " pips\n",
       "Spread : ", spread, " / ", SpreadMax, " pips\n",
+      "---\n",
+      "BE trigger : ", BE_Trigger_Pips, " pips | Buffer : +", BE_Buffer_Pips, " pips\n",
+      "Trail : ATR x", ATR_Trail_Mult, " | TP securite : ATR x", ATR_TP1_Mult, "\n",
       "---\n",
       "Trades jour : ", g_TradesToday, " / ", MaxTradesPerDay, "\n",
       "Pertes cons : ", g_ConsecLosses, " / ", MaxConsecLosses, "\n",
