@@ -32,6 +32,9 @@ input int    EMA_Slow             = 200;
 // --- Signal ICT/SMC ---
 input int    OB_Lookback          = 50;
 input int    FVG_MinPips          = 5;
+input int    FVG_Lookback         = 50;   // nbre de bougies pour chercher un FVG
+input bool   RequireFVG           = false; // exiger un retest FVG comme l'OB
+input int    GAP_MinPips          = 10;   // gap ouverture min en pips pour detection
 input int    OB_TouchPips         = 30;
 input int    ConfidenceMin        = 75;
 input int    SwingLookback        = 5;
@@ -94,7 +97,8 @@ int OnInit()
    g_LastClosedTicket  = -1;
    Print("=== ICT/SMC Bot v5.0 demarre ===");
    Print("AllowShortTrades:", AllowShortTrades, " | UseATR_TP:", UseATR_TP, " | Trail_Step:", Trail_Step_Pips);
-   Print("UseKillZone:", UseKillZone, " | UseMultiTF:", UseMultiTF, " | RequireOB:", RequireOB);
+   Print("UseKillZone:", UseKillZone, " | UseMultiTF:", UseMultiTF, " | RequireOB:", RequireOB, " | RequireFVG:", RequireFVG);
+   Print("FVG_MinPips:", FVG_MinPips, " | FVG_Lookback:", FVG_Lookback, " | GAP_MinPips:", GAP_MinPips);
    Print("ConfidenceMin:", ConfidenceMin, " | SL:", SL_Pips, " TP:", TP_Pips);
    return INIT_SUCCEEDED;
 }
@@ -350,9 +354,17 @@ void GenerateSignal(Signal &sig)
    if(RequireOB && !obFound) { g_Debug+="-> STOP: Pas d OB\n"; return; }
    if(obFound) sig.confidence += 20;
 
-   // FVG (bonus)
+   // FVG - retest de zone (ecart entre fin bougie 1 et debut bougie 3)
    double fvgT=0, fvgB=0;
-   if(FindFVG(fvgT,fvgB,bias,PERIOD_M15)) { sig.confidence+=10; g_Debug+="FVG: OUI\n"; }
+   bool fvgFound = FindFVG(fvgT, fvgB, bias, PERIOD_M15);
+   g_Debug += "FVG: " + (fvgFound?"OUI (retest zone)":"NON") + "\n";
+   if(RequireFVG && !fvgFound) { g_Debug+="-> STOP: Pas de retest FVG\n"; return; }
+   if(fvgFound) sig.confidence += 20;
+
+   // GAP (saut de prix a l'ouverture - zone sans transactions)
+   double gapT=0, gapB=0;
+   if(FindGap(gapT, gapB, bias, PERIOD_M15)) { sig.confidence+=10; g_Debug+="GAP: OUI\n"; }
+   else g_Debug += "GAP: NON\n";
 
    g_Debug += "Score: " + IntegerToString(sig.confidence) + "%\n";
    if(sig.confidence < ConfidenceMin) { g_Debug+="-> STOP: Score insuffisant\n"; return; }
@@ -445,15 +457,80 @@ bool FindOrderBlock(double &obTop, double &obBot, string bias, int tf)
    return false;
 }
 
+// FVG = ecart entre HIGH de la bougie 1 et LOW de la bougie 3 (haussier)
+//       ou entre LOW de la bougie 1 et HIGH de la bougie 3 (baissier)
+// Le prix doit retester la zone du FVG pour valider le signal (retest = entree dans la zone)
 bool FindFVG(double &top, double &bot, string bias, int tf)
 {
    double minGap = FVG_MinPips * GetPip();
-   for(int i=2; i<30; i++)
+   double price  = (bias=="BUY") ? Ask : Bid;
+
+   for(int i=2; i<FVG_Lookback; i++)
    {
-      double hi1=iHigh(Symbol(),tf,i+1), lo1=iLow(Symbol(),tf,i+1);
-      double hi3=iHigh(Symbol(),tf,i-1), lo3=iLow(Symbol(),tf,i-1);
-      if(bias=="BUY"  && lo3>hi1 && (lo3-hi1)>=minGap) { top=lo3; bot=hi1; return true; }
-      if(bias=="SELL" && hi3<lo1 && (lo1-hi3)>=minGap)  { top=lo1; bot=hi3; return true; }
+      // bougie 1 = i+1, bougie 2 = i (barre centrale), bougie 3 = i-1
+      double hi1 = iHigh(Symbol(), tf, i+1);  // fin haut bougie 1
+      double lo1 = iLow (Symbol(), tf, i+1);  // fin bas  bougie 1
+      double hi3 = iHigh(Symbol(), tf, i-1);  // debut haut bougie 3
+      double lo3 = iLow (Symbol(), tf, i-1);  // debut bas  bougie 3
+
+      if(bias == "BUY")
+      {
+         // FVG haussier : gap entre HIGH bougie1 et LOW bougie3 (bougie 3 a ouvert au-dessus)
+         if(lo3 > hi1 && (lo3 - hi1) >= minGap)
+         {
+            // Retest : le prix doit etre revenu dans la zone du gap
+            if(price >= hi1 && price <= lo3)
+            {
+               top = lo3; bot = hi1; return true;
+            }
+         }
+      }
+      else if(bias == "SELL")
+      {
+         // FVG baissier : gap entre LOW bougie1 et HIGH bougie3 (bougie 3 a ouvert en-dessous)
+         if(hi3 < lo1 && (lo1 - hi3) >= minGap)
+         {
+            // Retest : le prix doit etre revenu dans la zone du gap
+            if(price >= hi3 && price <= lo1)
+            {
+               top = lo1; bot = hi3; return true;
+            }
+         }
+      }
+   }
+   return false;
+}
+
+// GAP = saut de prix entre la cloture de la bougie N et l'ouverture de la bougie N+1
+// Zone sans transactions (trou sur le graphique)
+bool FindGap(double &top, double &bot, string bias, int tf)
+{
+   double minGap = GAP_MinPips * GetPip();
+   double price  = (bias=="BUY") ? Ask : Bid;
+
+   for(int i=1; i<FVG_Lookback; i++)
+   {
+      double prevClose = iClose(Symbol(), tf, i+1);
+      double curOpen   = iOpen (Symbol(), tf, i);
+
+      if(bias == "BUY" && curOpen > prevClose + minGap)
+      {
+         // Gap haussier : ouverture au-dessus de la cloture precedente
+         // Zone = prevClose -> curOpen
+         if(price >= prevClose && price <= curOpen)
+         {
+            top = curOpen; bot = prevClose; return true;
+         }
+      }
+      else if(bias == "SELL" && curOpen < prevClose - minGap)
+      {
+         // Gap baissier : ouverture en-dessous de la cloture precedente
+         // Zone = curOpen -> prevClose
+         if(price >= curOpen && price <= prevClose)
+         {
+            top = prevClose; bot = curOpen; return true;
+         }
+      }
    }
    return false;
 }
