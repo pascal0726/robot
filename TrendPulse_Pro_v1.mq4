@@ -21,8 +21,8 @@
 //|       Filtre H1 EMA21 ajoute                                    |
 //|  PAS DE GRID - PAS DE MARTINGALE                                |
 //+------------------------------------------------------------------+
-#property copyright "TrendPulse Pro v3.0"
-#property version   "3.00"
+#property copyright "TrendPulse Pro v3.1"
+#property version   "3.10"
 #property strict
 
 //=== LOTS =========================================================
@@ -96,6 +96,12 @@ datetime g_LastBarTime   = 0;    // Derniere bougie M15 traitee
 datetime g_LastTradeTime = 0;    // Heure du dernier trade
 int      g_LastTicket    = -1;   // Dernier ticket histoire
 int      g_OpenTicket    = -1;   // Ticket du trade ouvert
+
+// FVG zones actives (retest)
+double   g_FVGBullLow    = 0;   // Bas de la zone FVG haussiere
+double   g_FVGBullHigh   = 0;   // Haut de la zone FVG haussiere
+double   g_FVGBearLow    = 0;   // Bas de la zone FVG baissiere
+double   g_FVGBearHigh   = 0;   // Haut de la zone FVG baissiere
 
 //+------------------------------------------------------------------+
 //| INIT                                                              |
@@ -314,31 +320,80 @@ int GetSwingBias()
 }
 
 //+------------------------------------------------------------------+
-//| DETECTION FVG - Fair Value Gap (interne, sans affichage)         |
-//| Retourne : 1=FVG haussier, -1=FVG baissier, 0=rien              |
+//| SCAN FVG - Detecte et stocke les zones FVG recentes             |
+//|  Logique : cherche les 3 bougies A-B-C formant un gap           |
+//|   FVG haussier : HIGH(A) < LOW(C) => gap [hiA, loC]            |
+//|   FVG baissier : LOW(A) > HIGH(C) => gap [hiC, loA]            |
+//|  Stocke le FVG le plus recent dans les globales g_FVG*          |
 //+------------------------------------------------------------------+
-int GetFVGBias()
+void ScanFVGZones()
 {
-   double curPrice = iClose(Symbol(), PERIOD_M15, 1);
+   g_FVGBullLow = 0; g_FVGBullHigh = 0;
+   g_FVGBearLow = 0; g_FVGBearHigh = 0;
 
-   for(int i = 2; i < 60; i++)
+   for(int i = 3; i < 60; i++)
    {
-      double hiA = iHigh(Symbol(), PERIOD_M15, i+1); // bougie A (gauche)
+      double hiA = iHigh(Symbol(), PERIOD_M15, i+1); // bougie A (plus ancienne)
       double loA = iLow (Symbol(), PERIOD_M15, i+1);
-      double hiC = iHigh(Symbol(), PERIOD_M15, i-1); // bougie C (droite)
+      double hiC = iHigh(Symbol(), PERIOD_M15, i-1); // bougie C (plus recente)
       double loC = iLow (Symbol(), PERIOD_M15, i-1);
 
-      // FVG haussier : high[A] < low[C] => gap entre hiA et loC
-      if(loC > hiA && curPrice >= hiA && curPrice <= loC)
+      // FVG haussier : loC > hiA => gap entre hiA et loC
+      if(loC > hiA && g_FVGBullLow == 0)
       {
-         Print("FVG Haussier: zone ",DoubleToStr(hiA,5)," - ",DoubleToStr(loC,5));
-         return 1;
+         g_FVGBullLow  = hiA;
+         g_FVGBullHigh = loC;
+         Print("FVG Haussier detecte: zone [", DoubleToStr(hiA,Digits),
+               " - ", DoubleToStr(loC,Digits), "] a bar=", i);
       }
 
-      // FVG baissier : low[A] > high[C] => gap entre hiC et loA
-      if(hiC < loA && curPrice <= loA && curPrice >= hiC)
+      // FVG baissier : hiC < loA => gap entre hiC et loA
+      if(hiC < loA && g_FVGBearLow == 0)
       {
-         Print("FVG Baissier: zone ",DoubleToStr(hiC,5)," - ",DoubleToStr(loA,5));
+         g_FVGBearLow  = hiC;
+         g_FVGBearHigh = loA;
+         Print("FVG Baissier detecte: zone [", DoubleToStr(hiC,Digits),
+               " - ", DoubleToStr(loA,Digits), "] a bar=", i);
+      }
+
+      if(g_FVGBullLow > 0 && g_FVGBearLow > 0) break;
+   }
+}
+
+//+------------------------------------------------------------------+
+//| RETEST FVG - Detecte si la bougie actuelle reteste une zone FVG  |
+//|  BUY  : mèche entre dans le FVG haussier + close au-dessus      |
+//|  SELL : mèche entre dans le FVG baissier + close en-dessous     |
+//| Retourne : 1=retest haussier, -1=retest baissier, 0=rien        |
+//+------------------------------------------------------------------+
+int GetFVGRetest()
+{
+   double curLow   = iLow  (Symbol(), PERIOD_M15, 1);
+   double curHigh  = iHigh (Symbol(), PERIOD_M15, 1);
+   double curClose = iClose(Symbol(), PERIOD_M15, 1);
+
+   // Retest FVG haussier : meche entre dans la zone, close au-dessus du bas
+   if(g_FVGBullLow > 0 && g_FVGBullHigh > 0)
+   {
+      if(curLow <= g_FVGBullHigh && curClose >= g_FVGBullLow)
+      {
+         Print("FVG RETEST BULL: zone [", DoubleToStr(g_FVGBullLow,Digits),
+               " - ", DoubleToStr(g_FVGBullHigh,Digits), "]",
+               " | Low:", DoubleToStr(curLow,Digits),
+               " Close:", DoubleToStr(curClose,Digits));
+         return 1;
+      }
+   }
+
+   // Retest FVG baissier : meche entre dans la zone, close en-dessous du haut
+   if(g_FVGBearLow > 0 && g_FVGBearHigh > 0)
+   {
+      if(curHigh >= g_FVGBearLow && curClose <= g_FVGBearHigh)
+      {
+         Print("FVG RETEST BEAR: zone [", DoubleToStr(g_FVGBearLow,Digits),
+               " - ", DoubleToStr(g_FVGBearHigh,Digits), "]",
+               " | High:", DoubleToStr(curHigh,Digits),
+               " Close:", DoubleToStr(curClose,Digits));
          return -1;
       }
    }
@@ -444,25 +499,62 @@ int GetAutoTrendBias()
 //+------------------------------------------------------------------+
 //| SIGNAL PRINCIPAL                                                  |
 //| Retourne : 1=BUY, -1=SELL, 0=RIEN                               |
+//|                                                                   |
+//|  PRIORITE DES SIGNAUX :                                          |
+//|   1. FVG RETEST : meche revient sur zone FVG -> entree precise   |
+//|   2. WYCKOFF    : Spring/Upthrust avec confirmation H1           |
+//|   3. CLASSIQUE  : EMA21 + MACD + swing + H1 (fallback)          |
 //+------------------------------------------------------------------+
 int GetSignal()
 {
-   // ---- 1. STRUCTURE SWING 3 bougies ----
-   int swingBias = GetSwingBias();
-
-   // ---- 2. WYCKOFF Spring / Upthrust (signal fort) ----
-   int wyckoff = GetWyckoffSignal();
-
-   // ---- 3. FVG confirmation ----
-   int fvg = GetFVGBias();
-
-   // ---- 4. CONFIRMATION H1 : close > EMA21 ----
+   // ---- Confirmation H1 (commune a tous les setups) ----
    double h1Close1 = iClose(Symbol(), PERIOD_H1, 1);
    double h1Ema21  = iMA(Symbol(), PERIOD_H1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    bool   h1Bull   = (h1Close1 > h1Ema21);
    bool   h1Bear   = (h1Close1 < h1Ema21);
 
-   // ---- 5. ENTREE M15 : EMA21 + MACD ----
+   // ---- Structure Swing ----
+   int swingBias = GetSwingBias();
+
+   // ---- PRIORITE 1 : FVG RETEST ----
+   // Le prix revient tester une zone FVG -> entree au debut du move
+   ScanFVGZones();
+   int fvgRetest = GetFVGRetest();
+
+   if(fvgRetest == 1 && swingBias != -1 && h1Bull)
+   {
+      g_FVGBullLow = 0; g_FVGBullHigh = 0; // FVG consomme
+      Print("SIGNAL BUY [FVG RETEST] swing=", swingBias, " h1=OK");
+      return 1;
+   }
+   if(fvgRetest == -1 && swingBias != 1 && h1Bear)
+   {
+      int autoTrend = GetAutoTrendBias();
+      if(autoTrend == 1)
+      {
+         Print("SELL bloque: tendance D1 BULL FORT");
+         return 0;
+      }
+      g_FVGBearLow = 0; g_FVGBearHigh = 0; // FVG consomme
+      Print("SIGNAL SELL [FVG RETEST] swing=", swingBias, " h1=OK");
+      return -1;
+   }
+
+   // ---- PRIORITE 2 : WYCKOFF Spring / Upthrust ----
+   int wyckoff = GetWyckoffSignal();
+
+   if(wyckoff == 1 && swingBias != -1 && h1Bull)
+   {
+      Print("SIGNAL BUY [SPRING] swing=", swingBias, " h1=OK");
+      return 1;
+   }
+   if(wyckoff == -1 && swingBias != 1 && h1Bear)
+   {
+      Print("SIGNAL SELL [UPTHRUST] swing=", swingBias, " h1=OK");
+      return -1;
+   }
+
+   // ---- PRIORITE 3 : SETUP CLASSIQUE EMA21 + MACD + swing + H1 ----
    double m15Ema21  = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    double m15Close1 = iClose(Symbol(), PERIOD_M15, 1);
    if(m15Ema21 <= 0) { Print("BLOQUE: M15 EMA21 invalide"); return 0; }
@@ -471,37 +563,23 @@ int GetSignal()
    double macdSig  = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_SIGNAL,1);
    double hist     = macdMain - macdSig;
 
-   // ---- WYCKOFF : override fort si H1 + structure confirment ----
-   if(wyckoff == 1 && swingBias != -1 && h1Bull)
-   {
-      Print("SIGNAL BUY [SPRING] swing=",swingBias," fvg=",fvg," h1=OK");
-      return 1;
-   }
-   if(wyckoff == -1 && swingBias != 1 && h1Bear)
-   {
-      Print("SIGNAL SELL [UPTHRUST] swing=",swingBias," fvg=",fvg," h1=OK");
-      return -1;
-   }
-
-   // ---- SETUP CLASSIQUE : EMA21 + MACD + swing + FVG + H1 ----
    bool buySetup  = (m15Close1 > m15Ema21 && hist > 0 && swingBias != -1 && h1Bull);
    bool sellSetup = (m15Close1 < m15Ema21 && hist < 0 && swingBias !=  1 && h1Bear);
 
-   if(buySetup && fvg >= 0)
+   if(buySetup)
    {
-      Print("SIGNAL BUY: ema=OK macd=",DoubleToStr(hist,6)," swing=",swingBias," fvg=",fvg);
+      Print("SIGNAL BUY [CLASSIQUE]: ema=OK macd=", DoubleToStr(hist,6), " swing=", swingBias);
       return 1;
    }
-   if(sellSetup && fvg <= 0)
+   if(sellSetup)
    {
-      // Filtre auto : bloque SHORT si tendance D1+H4 fortement haussiere
       int autoTrend = GetAutoTrendBias();
       if(autoTrend == 1)
       {
          Print("SELL bloque: tendance D1 BULL FORT (auto-detection)");
          return 0;
       }
-      Print("SIGNAL SELL: ema=OK macd=",DoubleToStr(hist,6)," swing=",swingBias," fvg=",fvg," autoTrend=",autoTrend);
+      Print("SIGNAL SELL [CLASSIQUE]: ema=OK macd=", DoubleToStr(hist,6), " swing=", swingBias, " autoTrend=", autoTrend);
       return -1;
    }
 
@@ -794,8 +872,15 @@ void ShowDashboard()
    bool   inSess  = IsInSession();
    string sessStr = inSess ? "ACTIF" : "HORS SESSION";
 
+   string fvgBullStr = (g_FVGBullLow > 0)
+                       ? StringConcatenate("BULL [", DoubleToStr(g_FVGBullLow,Digits), "-", DoubleToStr(g_FVGBullHigh,Digits), "]")
+                       : "---";
+   string fvgBearStr = (g_FVGBearLow > 0)
+                       ? StringConcatenate("BEAR [", DoubleToStr(g_FVGBearLow,Digits), "-", DoubleToStr(g_FVGBearHigh,Digits), "]")
+                       : "---";
+
    Comment(
-      "=== TrendPulse Pro v3.0 ===\n",
+      "=== TrendPulse Pro v3.1 ===\n",
       "Heure France: ", parisH, "h", dt.min, " | Session: ", sessStr, "\n",
       "---\n",
       "D1 Biais : ", d1Bias, "\n",
@@ -803,6 +888,9 @@ void ShowDashboard()
       "Auto-Tendance : ", autoBStr, "\n",
       "ATR M15 : ", DoubleToStr(atr/pip, 1), " pips\n",
       "Spread : ", spread, " / ", SpreadMax, " pips\n",
+      "---\n",
+      "FVG Haussier : ", fvgBullStr, "\n",
+      "FVG Baissier : ", fvgBearStr, "\n",
       "---\n",
       "BE trigger : +", BE_Trigger_Pips, " pips | Buffer : +", BE_Buffer_Pips, " pips\n",
       "Trail : ", (UseFixedTrail ? (string)FixedTrail_Pips+"pips fixe" : "ATRx"+(string)ATR_Trail_Mult+" dyn"), "\n",
