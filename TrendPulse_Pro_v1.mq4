@@ -54,9 +54,8 @@ input int    Trail_Trigger_Pips = 20;     // Profit min en pips pour activer le 
 
 //=== BREAK-EVEN ===================================================
 // BE independant du trail, du SL et du TP (son propre declencheur + son propre buffer)
-// IMPORTANT : BE_Trigger_Pips DOIT etre < FixedSL_Pips (ex: 15 < 30)
 input bool   UseBE              = true;    // Activer break-even automatique
-input int    BE_Trigger_Pips    = 15;      // Profit en pips pour activer BE (< SL !)
+input int    BE_Trigger_Pips    = 15;      // Profit en pips pour activer BE
 input int    BE_Buffer_Pips     = 3;       // SL = entree + N pips apres BE (securite)
 
 //=== FILTRES TENDANCE ==============================================
