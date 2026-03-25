@@ -39,8 +39,8 @@ input int    MaxConsecLosses    = 3;       // Pause si N pertes consecutives
 
 //=== SL / TP ======================================================
 input bool   UseFixedSLTP       = false;  // true = SL/TP fixes en pips | false = ATR dynamique
-input int    FixedSL_Pips       = 150;    // SL fixe en pips (si UseFixedSLTP=true)
-input int    FixedTP_Pips       = 400;    // TP securite en pips (si UseFixedSLTP=true)
+input int    FixedSL_Pips       = 30;     // SL fixe en pips (ratio 1:3)
+input int    FixedTP_Pips       = 90;     // TP fixe en pips (ratio 1:3)
 input double ATR_SL_Mult        = 1.5;    // SL = ATR x ce mult (si UseFixedSLTP=false)
 input double ATR_TP1_Mult       = 4.0;    // TP securite = ATR x ce mult (si UseFixedSLTP=false)
 input int    ATR_Period         = 14;      // Periode ATR
@@ -52,8 +52,8 @@ input double ATR_Trail_Mult     = 2.5;    // Trail = ATR x ce mult (si UseFixedT
 
 //=== BREAK-EVEN ===================================================
 input bool   UseBE              = true;    // Activer break-even automatique
-input int    BE_Trigger_Pips    = 50;      // Profit en pips pour activer BE
-input int    BE_Buffer_Pips     = 5;       // SL = entree + N pips apres BE (securite)
+input int    BE_Trigger_Pips    = 20;      // Profit en pips pour activer BE (adapte SL=30)
+input int    BE_Buffer_Pips     = 3;       // SL = entree + N pips apres BE (securite)
 
 //=== FILTRES TENDANCE ==============================================
 input int    EMA_Fast           = 21;      // EMA rapide (M15/H1 structure)
