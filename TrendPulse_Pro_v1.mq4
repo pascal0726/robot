@@ -48,7 +48,7 @@ input int    ATR_Period         = 14;      // Periode ATR
 //=== TRAILING STOP ================================================
 // Trail independant du BE, du SL et du TP (son propre declencheur + sa propre distance)
 input bool   UseFixedTrail      = true;   // true = trail fixe en pips | false = ATR dynamique
-input int    FixedTrail_Pips    = 30;     // Distance trail en pips (regle independante)
+input int    FixedTrail_Pips    = 45;     // Distance trail en pips (regle independante)
 input double ATR_Trail_Mult     = 2.5;    // Trail = ATR x ce mult (si UseFixedTrail=false)
 input int    Trail_Trigger_Pips = 20;     // Profit min en pips pour activer le trailing
 
