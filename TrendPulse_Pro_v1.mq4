@@ -53,10 +53,12 @@ input double ATR_Trail_Mult     = 2.5;    // Trail = ATR x ce mult (si UseFixedT
 input int    Trail_Trigger_Pips = 20;     // Profit min en pips pour activer le trailing
 
 //=== BREAK-EVEN ===================================================
-// BE independant du trail, du SL et du TP (son propre declencheur + son propre buffer)
+// BE independant du trail, du SL et du TP (son propre declencheur)
+// BE = ramene le SL exactement au prix d'entree (0 perte/gain)
+// C'est le trailing qui protege les profits au-dela
 input bool   UseBE              = true;    // Activer break-even automatique
 input int    BE_Trigger_Pips    = 15;      // Profit en pips pour activer BE
-input int    BE_Buffer_Pips     = 3;       // SL = entree + N pips apres BE (securite)
+input int    BE_Buffer_Pips     = 0;       // SL = entree + N pips (0 = exactement au prix d'entree)
 
 //=== FILTRES TENDANCE ==============================================
 input int    EMA_Fast           = 21;      // EMA rapide (M15/H1 structure)
