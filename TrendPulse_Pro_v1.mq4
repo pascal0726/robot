@@ -879,30 +879,30 @@ void ShowDashboard()
                        ? StringConcatenate("BEAR [", DoubleToStr(g_FVGBearLow,Digits), "-", DoubleToStr(g_FVGBearHigh,Digits), "]")
                        : "---";
 
-   Comment(
-      "=== TrendPulse Pro v3.1 ===\n",
-      "Heure France: ", parisH, "h", dt.min, " | Session: ", sessStr, "\n",
-      "---\n",
-      "D1 Biais : ", d1Bias, "\n",
-      "H4 Tendance : ", h4Trend, "\n",
-      "Auto-Tendance : ", autoBStr, "\n",
-      "ATR M15 : ", DoubleToStr(atr/pip, 1), " pips\n",
-      "Spread : ", spread, " / ", SpreadMax, " pips\n",
-      "---\n",
-      "FVG Haussier : ", fvgBullStr, "\n",
-      "FVG Baissier : ", fvgBearStr, "\n",
-      "---\n",
-      "BE trigger : +", BE_Trigger_Pips, " pips | Buffer : +", BE_Buffer_Pips, " pips\n",
-      "Trail : ", (UseFixedTrail ? (string)FixedTrail_Pips+"pips fixe" : "ATRx"+(string)ATR_Trail_Mult+" dyn"), "\n",
-      "---\n",
-      "Trades jour : ", g_TradesToday, " / ", MaxTradesPerDay, "\n",
-      "Pertes cons : ", g_ConsecLosses, " / ", MaxConsecLosses, "\n",
-      "P&L jour : ", (profPct >= 0 ? "+" : ""), DoubleToStr(profPct, 2), "%\n",
-      "Drawdown : ", DoubleToStr(ddPct, 2), "% / ", MaxDailyLoss_Pct, "%\n",
-      "---\n",
-      "Risque/trade : ", RiskPercent, "%\n",
-      "Balance : ", DoubleToStr(AccountBalance(), 2), " ", AccountCurrency(), "\n"
-   );
+   string msg = "";
+   msg += "=== TrendPulse Pro v3.1 ===\n";
+   msg += "Heure France: " + (string)parisH + "h" + (string)dt.min + " | Session: " + sessStr + "\n";
+   msg += "---\n";
+   msg += "D1 Biais : " + d1Bias + "\n";
+   msg += "H4 Tendance : " + h4Trend + "\n";
+   msg += "Auto-Tendance : " + autoBStr + "\n";
+   msg += "ATR M15 : " + DoubleToStr(atr/pip, 1) + " pips\n";
+   msg += "Spread : " + (string)spread + " / " + (string)SpreadMax + " pips\n";
+   msg += "---\n";
+   msg += "FVG Haussier : " + fvgBullStr + "\n";
+   msg += "FVG Baissier : " + fvgBearStr + "\n";
+   msg += "---\n";
+   msg += "BE trigger : +" + (string)BE_Trigger_Pips + " pips | Buffer : +" + (string)BE_Buffer_Pips + " pips\n";
+   msg += "Trail : " + (UseFixedTrail ? (string)FixedTrail_Pips+"pips fixe" : "ATRx"+(string)ATR_Trail_Mult+" dyn") + "\n";
+   msg += "---\n";
+   msg += "Trades jour : " + (string)g_TradesToday + " / " + (string)MaxTradesPerDay + "\n";
+   msg += "Pertes cons : " + (string)g_ConsecLosses + " / " + (string)MaxConsecLosses + "\n";
+   msg += "P&L jour : " + (profPct >= 0 ? "+" : "") + DoubleToStr(profPct, 2) + "%\n";
+   msg += "Drawdown : " + DoubleToStr(ddPct, 2) + "% / " + (string)MaxDailyLoss_Pct + "%\n";
+   msg += "---\n";
+   msg += "Risque/trade : " + (string)RiskPercent + "%\n";
+   msg += "Balance : " + DoubleToStr(AccountBalance(), 2) + " " + AccountCurrency() + "\n";
+   Comment(msg);
 }
 
 //+------------------------------------------------------------------+
