@@ -38,7 +38,7 @@ input int    MaxOpenTrades      = 1;       // 1 seul trade a la fois (discipline
 input int    MaxConsecLosses    = 3;       // Pause si N pertes consecutives
 
 //=== SL / TP ======================================================
-input bool   UseFixedSLTP       = false;  // true = SL/TP fixes en pips | false = ATR dynamique
+input bool   UseFixedSLTP       = true;   // true = SL/TP fixes en pips | false = ATR dynamique
 input int    FixedSL_Pips       = 30;     // SL fixe en pips (ratio 1:3)
 input int    FixedTP_Pips       = 90;     // TP fixe en pips (ratio 1:3)
 input double ATR_SL_Mult        = 1.5;    // SL = ATR x ce mult (si UseFixedSLTP=false)
@@ -586,53 +586,51 @@ int GetSignal()
    //                 bloque SELL seulement si H1 clairement UPTREND  (+1)
    int h1SwingBias = GetH1SwingBias();
 
-   // ---- Confirmation H1 EMA (filtre secondaire) ----
-   double h1Close1 = iClose(Symbol(), PERIOD_H1, 1);
-   double h1Ema21  = iMA(Symbol(), PERIOD_H1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
-   bool   h1Bull   = (h1Close1 > h1Ema21);
-   bool   h1Bear   = (h1Close1 < h1Ema21);
-
    // ---- PRIORITE 1 : FVG RETEST ----
+   // Note: FVG retest = prix revient dans la zone (pullback), donc pas de filtre EMA H1
+   //       car pendant un pullback, le prix peut etre sous l'EMA21 H1 -> conflit!
    ScanFVGZones();
    int fvgRetest = GetFVGRetest();
 
-   // BUY : H1 swing pas DOWNTREND + H1 EMA haussier
-   if(fvgRetest == 1 && h1SwingBias != -1 && h1Bull)
+   // BUY : H1 swing pas DOWNTREND (FVG a sa propre confirmation)
+   if(fvgRetest == 1 && h1SwingBias != -1)
    {
       g_FVGBullLow = 0; g_FVGBullHigh = 0;
-      Print("SIGNAL BUY [FVG RETEST] H1swing=",h1SwingBias," h1EMA=OK");
+      Print("SIGNAL BUY [FVG RETEST] H1swing=",h1SwingBias);
       return 1;
    }
    if(fvgRetest == 1 && h1SwingBias == -1)
       Print("BUY [FVG] bloque: H1 DOWNTREND (LH+LL)");
 
-   // SELL : H1 swing pas UPTREND + H1 EMA baissier
-   if(fvgRetest == -1 && h1SwingBias != 1 && h1Bear)
+   // SELL : H1 swing pas UPTREND (FVG a sa propre confirmation)
+   if(fvgRetest == -1 && h1SwingBias != 1)
    {
       int autoTrend = GetAutoTrendBias();
       if(autoTrend == 1) { Print("SELL bloque: D1 BULL FORT"); return 0; }
       g_FVGBearLow = 0; g_FVGBearHigh = 0;
-      Print("SIGNAL SELL [FVG RETEST] H1swing=",h1SwingBias," h1EMA=OK");
+      Print("SIGNAL SELL [FVG RETEST] H1swing=",h1SwingBias);
       return -1;
    }
    if(fvgRetest == -1 && h1SwingBias == 1)
       Print("SELL [FVG] bloque: H1 UPTREND (HH+HL)");
 
    // ---- PRIORITE 2 : WYCKOFF Spring / Upthrust ----
+   // Note: Spring = wick sous le range -> prix peut etre sous EMA21 H1, pas de filtre EMA
    int wyckoff = GetWyckoffSignal();
 
-   if(wyckoff == 1 && h1SwingBias != -1 && h1Bull)
+   if(wyckoff == 1 && h1SwingBias != -1)
    {
-      Print("SIGNAL BUY [SPRING] H1swing=",h1SwingBias," h1EMA=OK");
+      Print("SIGNAL BUY [SPRING] H1swing=",h1SwingBias);
       return 1;
    }
-   if(wyckoff == -1 && h1SwingBias != 1 && h1Bear)
+   if(wyckoff == -1 && h1SwingBias != 1)
    {
-      Print("SIGNAL SELL [UPTHRUST] H1swing=",h1SwingBias," h1EMA=OK");
+      Print("SIGNAL SELL [UPTHRUST] H1swing=",h1SwingBias);
       return -1;
    }
 
    // ---- PRIORITE 3 : SETUP CLASSIQUE EMA21 + MACD ----
+   // H1 EMA21 filter garde ici car signal classique suit la tendance EMA
    double m15Ema21  = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    double m15Close1 = iClose(Symbol(), PERIOD_M15, 1);
    if(m15Ema21 <= 0) { Print("BLOQUE: M15 EMA21 invalide"); return 0; }
@@ -640,6 +638,11 @@ int GetSignal()
    double macdMain = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_MAIN,  1);
    double macdSig  = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_SIGNAL,1);
    double hist     = macdMain - macdSig;
+
+   double h1Close1 = iClose(Symbol(), PERIOD_H1, 1);
+   double h1Ema21  = iMA(Symbol(), PERIOD_H1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
+   bool   h1Bull   = (h1Close1 > h1Ema21);
+   bool   h1Bear   = (h1Close1 < h1Ema21);
 
    // BUY : H1 swing pas DOWNTREND + M15 EMA + MACD + H1 EMA
    if(m15Close1 > m15Ema21 && hist > 0 && h1SwingBias != -1 && h1Bull)
@@ -655,7 +658,7 @@ int GetSignal()
    {
       int autoTrend = GetAutoTrendBias();
       if(autoTrend == 1) { Print("SELL bloque: D1 BULL FORT"); return 0; }
-      Print("SIGNAL SELL [CLASSIQUE]: H1swing=",h1SwingBias," macd=",DoubleToStr(hist,6));
+      Print("SIGNAL SELL [CLASSIQUE]: H1swing=",h1SwingBias," macd=",DoubleToStr(hist,6)," h1EMA=OK");
       return -1;
    }
 
