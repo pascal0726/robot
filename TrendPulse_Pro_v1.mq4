@@ -507,65 +507,57 @@ int GetAutoTrendBias()
 //+------------------------------------------------------------------+
 int GetSignal()
 {
-   // ---- Filtre H4 strict : BUY interdit si H4 BEAR, SELL interdit si H4 BULL ----
-   double h4Mid  = iMA(Symbol(), PERIOD_H4, EMA_Mid,  0, MODE_EMA, PRICE_CLOSE, 1);
-   double h4Slow = iMA(Symbol(), PERIOD_H4, EMA_Slow, 0, MODE_EMA, PRICE_CLOSE, 1);
-   bool   h4Bull = (h4Mid > h4Slow);
-   bool   h4Bear = (h4Mid < h4Slow);
+   // ---- Tendance M15 par structure de marche : HH+HL=uptrend, LH+LL=downtrend ----
+   // GetSwingBias() retourne 1=uptrend(HH+HL), -1=downtrend(LH+LL), 0=range/unclear
+   int swingBias = GetSwingBias();
 
-   // ---- Confirmation H1 (commune a tous les setups) ----
+   // ---- Confirmation H1 ----
    double h1Close1 = iClose(Symbol(), PERIOD_H1, 1);
    double h1Ema21  = iMA(Symbol(), PERIOD_H1, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    bool   h1Bull   = (h1Close1 > h1Ema21);
    bool   h1Bear   = (h1Close1 < h1Ema21);
 
-   // ---- Structure Swing ----
-   int swingBias = GetSwingBias();
-
    // ---- PRIORITE 1 : FVG RETEST ----
    ScanFVGZones();
    int fvgRetest = GetFVGRetest();
 
-   if(fvgRetest == 1 && swingBias != -1 && h1Bull && h4Bull)
+   // BUY : structure HH+HL confirmee + H1 haussier
+   if(fvgRetest == 1 && swingBias == 1 && h1Bull)
    {
       g_FVGBullLow = 0; g_FVGBullHigh = 0;
-      Print("SIGNAL BUY [FVG RETEST] swing=", swingBias, " h1=OK h4=BULL");
+      Print("SIGNAL BUY [FVG RETEST] HH+HL confirme h1=OK");
       return 1;
    }
-   if(fvgRetest == 1 && !h4Bull)
-      Print("BUY [FVG] bloque: H4=BEAR");
+   if(fvgRetest == 1 && swingBias != 1)
+      Print("BUY [FVG] bloque: structure=", swingBias, " (pas HH+HL)");
 
-   if(fvgRetest == -1 && swingBias != 1 && h1Bear && h4Bear)
+   // SELL : structure LH+LL confirmee + H1 baissier
+   if(fvgRetest == -1 && swingBias == -1 && h1Bear)
    {
       int autoTrend = GetAutoTrendBias();
       if(autoTrend == 1) { Print("SELL bloque: D1 BULL FORT"); return 0; }
       g_FVGBearLow = 0; g_FVGBearHigh = 0;
-      Print("SIGNAL SELL [FVG RETEST] swing=", swingBias, " h1=OK h4=BEAR");
+      Print("SIGNAL SELL [FVG RETEST] LH+LL confirme h1=OK");
       return -1;
    }
-   if(fvgRetest == -1 && !h4Bear)
-      Print("SELL [FVG] bloque: H4=BULL");
+   if(fvgRetest == -1 && swingBias != -1)
+      Print("SELL [FVG] bloque: structure=", swingBias, " (pas LH+LL)");
 
    // ---- PRIORITE 2 : WYCKOFF Spring / Upthrust ----
    int wyckoff = GetWyckoffSignal();
 
-   if(wyckoff == 1 && swingBias != -1 && h1Bull && h4Bull)
+   if(wyckoff == 1 && swingBias == 1 && h1Bull)
    {
-      Print("SIGNAL BUY [SPRING] swing=", swingBias, " h1=OK h4=BULL");
+      Print("SIGNAL BUY [SPRING] HH+HL confirme h1=OK");
       return 1;
    }
-   if(wyckoff == 1 && !h4Bull)
-      Print("BUY [SPRING] bloque: H4=BEAR");
-
-   if(wyckoff == -1 && swingBias != 1 && h1Bear && h4Bear)
+   if(wyckoff == -1 && swingBias == -1 && h1Bear)
    {
-      Print("SIGNAL SELL [UPTHRUST] swing=", swingBias, " h1=OK h4=BEAR");
+      Print("SIGNAL SELL [UPTHRUST] LH+LL confirme h1=OK");
       return -1;
    }
-   if(wyckoff == -1 && !h4Bear)
-      Print("SELL [UPTHRUST] bloque: H4=BULL");
 
-   // ---- PRIORITE 3 : SETUP CLASSIQUE EMA21 + MACD + swing + H1 ----
+   // ---- PRIORITE 3 : SETUP CLASSIQUE EMA21 + MACD ----
    double m15Ema21  = iMA(Symbol(), PERIOD_M15, EMA_Fast, 0, MODE_EMA, PRICE_CLOSE, 1);
    double m15Close1 = iClose(Symbol(), PERIOD_M15, 1);
    if(m15Ema21 <= 0) { Print("BLOQUE: M15 EMA21 invalide"); return 0; }
@@ -574,22 +566,21 @@ int GetSignal()
    double macdSig  = iMACD(Symbol(),PERIOD_M15,MACD_Fast,MACD_Slow,MACD_Signal,PRICE_CLOSE,MODE_SIGNAL,1);
    double hist     = macdMain - macdSig;
 
-   bool buySetup  = (m15Close1 > m15Ema21 && hist > 0 && swingBias != -1 && h1Bull && h4Bull);
-   bool sellSetup = (m15Close1 < m15Ema21 && hist < 0 && swingBias !=  1 && h1Bear && h4Bear);
-
-   if(buySetup)
+   // BUY : HH+HL + H1 bull + EMA + MACD
+   if(m15Close1 > m15Ema21 && hist > 0 && swingBias == 1 && h1Bull)
    {
-      Print("SIGNAL BUY [CLASSIQUE]: macd=", DoubleToStr(hist,6), " swing=", swingBias, " h4=BULL");
+      Print("SIGNAL BUY [CLASSIQUE]: HH+HL macd=", DoubleToStr(hist,6));
       return 1;
    }
-   if(m15Close1 > m15Ema21 && hist > 0 && !h4Bull)
-      Print("BUY [CLASSIQUE] bloque: H4=BEAR");
+   if(m15Close1 > m15Ema21 && hist > 0 && swingBias != 1)
+      Print("BUY [CLASSIQUE] bloque: structure M15=", swingBias, " (pas HH+HL)");
 
-   if(sellSetup)
+   // SELL : LH+LL + H1 bear + EMA + MACD
+   if(m15Close1 < m15Ema21 && hist < 0 && swingBias == -1 && h1Bear)
    {
       int autoTrend = GetAutoTrendBias();
       if(autoTrend == 1) { Print("SELL bloque: D1 BULL FORT"); return 0; }
-      Print("SIGNAL SELL [CLASSIQUE]: macd=", DoubleToStr(hist,6), " swing=", swingBias, " h4=BEAR");
+      Print("SIGNAL SELL [CLASSIQUE]: LH+LL macd=", DoubleToStr(hist,6));
       return -1;
    }
 
