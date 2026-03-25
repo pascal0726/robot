@@ -49,10 +49,11 @@ input int    ATR_Period         = 14;      // Periode ATR
 input bool   UseFixedTrail      = true;   // true = trail fixe en pips | false = ATR dynamique
 input int    FixedTrail_Pips    = 50;     // Distance trail en pips (si UseFixedTrail=true)
 input double ATR_Trail_Mult     = 2.5;    // Trail = ATR x ce mult (si UseFixedTrail=false)
+input int    Trail_Trigger_Pips = 15;     // Profit min en pips pour activer le trailing
 
 //=== BREAK-EVEN ===================================================
 input bool   UseBE              = true;    // Activer break-even automatique
-input int    BE_Trigger_Pips    = 20;      // Profit en pips pour activer BE (adapte SL=30)
+input int    BE_Trigger_Pips    = 20;      // Profit en pips pour activer BE
 input int    BE_Buffer_Pips     = 3;       // SL = entree + N pips apres BE (securite)
 
 //=== FILTRES TENDANCE ==============================================
@@ -666,19 +667,28 @@ int GetSignal()
 }
 
 //+------------------------------------------------------------------+
-//| GESTION TRADES (BE configurable + trailing chandelier)          |
-//|  LOGIQUE :                                                       |
-//|   Phase 1 : SL reste a sa position initiale                     |
-//|   Phase 2 : profit >= BE_Trigger_Pips -> SL monte au BE         |
-//|   Phase 3 : SL au BE -> chandelier trail (ATR x Trail_Mult)     |
-//|  PAS DE PARTIAL CLOSE -> lot entier sur toute la duree          |
+//| GESTION TRADES (BE + Trailing INDEPENDANTS)                     |
+//|  BE et trailing sont deux mecanismes separes, sans interference:|
+//|                                                                  |
+//|  BE (Break-Even) :                                              |
+//|   -> actif quand profit >= BE_Trigger_Pips                      |
+//|   -> deplace SL a entree + BE_Buffer_Pips                       |
+//|   -> independant du trailing                                     |
+//|                                                                  |
+//|  Trailing (chandelier) :                                         |
+//|   -> actif quand profit >= Trail_Trigger_Pips                   |
+//|   -> suit le prix avec distance fixe ou ATR                     |
+//|   -> independant du BE                                           |
+//|                                                                  |
+//|  Regle commune : SL ne recule JAMAIS (favorise toujours trade)  |
 //+------------------------------------------------------------------+
 void ManageTrades()
 {
-   double pip     = GetPip();
-   double beBuf   = BE_Buffer_Pips * pip;
-   double beTrig  = BE_Trigger_Pips * pip;   // distance profit pour activer BE
-   double minStop = MarketInfo(Symbol(), MODE_STOPLEVEL) * Point;
+   double pip      = GetPip();
+   double beBuf    = BE_Buffer_Pips    * pip;
+   double beTrig   = BE_Trigger_Pips   * pip;
+   double trailTrig= Trail_Trigger_Pips* pip;
+   double minStop  = MarketInfo(Symbol(), MODE_STOPLEVEL) * Point;
 
    for(int i = OrdersTotal() - 1; i >= 0; i--)
    {
@@ -701,19 +711,20 @@ void ManageTrades()
       {
          double profit = Bid - op;
 
-         // Phase 2 : activer BE quand profit >= BE_Trigger_Pips
+         // BE independant : deplace SL a entree+buffer quand trigger atteint
          if(UseBE && profit >= beTrig && curSL < op + beBuf)
          {
             newSL = op + beBuf;
-            if(curSL < op) Print("BE active BUY #", ticket,
+            Print("BE active BUY #", ticket,
                " | Profit:", DoubleToStr(profit/pip,1), "pip | SL->", DoubleToStr(newSL,Digits));
          }
 
-         // Phase 3 : chandelier trail une fois SL au niveau BE (ou mieux)
-         if(curSL >= op - pip)
+         // Trailing independant : actif quand profit >= Trail_Trigger_Pips
+         // (pas besoin que le BE soit active)
+         if(profit >= trailTrig)
          {
             double chandelier = Bid - atrTrail;
-            if(chandelier > newSL + pip * 2)
+            if(chandelier > newSL + pip)   // SL avance seulement si ameliore
                newSL = chandelier;
          }
 
@@ -721,7 +732,7 @@ void ManageTrades()
          double maxSL = Bid - minStop;
          if(newSL > maxSL) newSL = maxSL;
 
-         // Appliquer si ameliore
+         // Appliquer si ameliore (SL ne recule jamais)
          if(newSL > curSL + pip)
          {
             if(!OrderModify(ticket, op, NormalizeDouble(newSL,Digits), curTP, 0, clrYellow))
@@ -734,19 +745,19 @@ void ManageTrades()
       {
          double profit = op - Ask;
 
-         // Phase 2 : activer BE quand profit >= BE_Trigger_Pips
+         // BE independant : deplace SL a entree-buffer quand trigger atteint
          if(UseBE && profit >= beTrig && curSL > op - beBuf)
          {
             newSL = op - beBuf;
-            if(curSL > op) Print("BE active SELL #", ticket,
+            Print("BE active SELL #", ticket,
                " | Profit:", DoubleToStr(profit/pip,1), "pip | SL->", DoubleToStr(newSL,Digits));
          }
 
-         // Phase 3 : chandelier trail une fois SL au niveau BE (ou mieux)
-         if(curSL <= op + pip)
+         // Trailing independant : actif quand profit >= Trail_Trigger_Pips
+         if(profit >= trailTrig)
          {
             double chandelier = Ask + atrTrail;
-            if(chandelier < newSL - pip * 2)
+            if(chandelier < newSL - pip)   // SL descend seulement si ameliore
                newSL = chandelier;
          }
 
@@ -754,7 +765,7 @@ void ManageTrades()
          double minSL = Ask + minStop;
          if(newSL < minSL) newSL = minSL;
 
-         // Appliquer si ameliore (plus bas = mieux pour SELL)
+         // Appliquer si ameliore (SL ne remonte jamais)
          if(curSL <= 0 || newSL < curSL - pip)
          {
             if(!OrderModify(ticket, op, NormalizeDouble(newSL,Digits), curTP, 0, clrYellow))
