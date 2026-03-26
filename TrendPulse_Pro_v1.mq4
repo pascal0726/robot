@@ -61,8 +61,8 @@ input int    BE_Trigger_Pips    = 40;      // Profit en pips pour activer BE
 input int    BE_Buffer_Pips     = 0;       // SL = entree + N pips (0 = exactement au prix d'entree)
 
 //=== FILTRES TENDANCE ==============================================
-input int    EMA_Fast           = 15;      // EMA rapide (M15/H1 structure)
-input int    EMA_Mid            = 25;      // EMA milieu (H4 tendance)
+input int    EMA_Fast           = 10;      // EMA rapide (M15/H1 structure)
+input int    EMA_Mid            = 20;      // EMA milieu (H4 tendance)
 input int    EMA_Slow           = 200;     // EMA lente (D1 biais)
 
 //=== FILTRE TENDANCE AUTO (D1 + H4) ==============================
