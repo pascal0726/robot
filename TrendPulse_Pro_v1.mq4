@@ -85,7 +85,7 @@ input int    NYClose            = 17;      // Fermeture New York (heure Paris)
 //=== FILTRES MARCHE ===============================================
 input int    SpreadMax          = 100;     // Spread max en points (100=1pip EURUSD, augmente pour XAUUSD)
 input double ATR_VolatMax       = 1.0;     // Bloque si ATR > N x moyenne (desactive=1)
-input int    CooldownMins       = 60;      // Pause en minutes apres une perte
+input int    CooldownMins       = 0;       // Pause en minutes apres une perte (desactive=0)
 input int    GapProtectPips     = 1;       // Bloque si gap > N pips (desactive=1)
 
 //=== MAGIC & COMMENTAIRE ==========================================
