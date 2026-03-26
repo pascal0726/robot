@@ -39,8 +39,8 @@ input int    MaxConsecLosses    = 3;       // Pause si N pertes consecutives
 
 //=== SL / TP ======================================================
 input bool   UseFixedSLTP       = true;   // true = SL/TP fixes en pips | false = ATR dynamique
-input int    FixedSL_Pips       = 30;     // SL fixe en pips (ratio 1:3)
-input int    FixedTP_Pips       = 100;    // TP fixe en pips
+input int    FixedSL_Pips       = 25;     // SL fixe en pips (ratio 1:3.6)
+input int    FixedTP_Pips       = 90;     // TP fixe en pips
 input double ATR_SL_Mult        = 1.5;    // SL = ATR x ce mult (si UseFixedSLTP=false)
 input double ATR_TP1_Mult       = 4.0;    // TP securite = ATR x ce mult (si UseFixedSLTP=false)
 input int    ATR_Period         = 14;      // Periode ATR
@@ -61,8 +61,8 @@ input int    BE_Trigger_Pips    = 40;      // Profit en pips pour activer BE
 input int    BE_Buffer_Pips     = 0;       // SL = entree + N pips (0 = exactement au prix d'entree)
 
 //=== FILTRES TENDANCE ==============================================
-input int    EMA_Fast           = 15;      // EMA rapide (M15/H1 structure)
-input int    EMA_Mid            = 25;      // EMA milieu (H4 tendance)
+input int    EMA_Fast           = 12;      // EMA rapide (M15/H1 structure)
+input int    EMA_Mid            = 26;      // EMA milieu (H4 tendance)
 input int    EMA_Slow           = 200;     // EMA lente (D1 biais)
 
 //=== FILTRE TENDANCE AUTO (D1 + H4) ==============================
@@ -84,9 +84,9 @@ input int    NYClose            = 17;      // Fermeture New York (heure Paris)
 
 //=== FILTRES MARCHE ===============================================
 input int    SpreadMax          = 100;     // Spread max en points (100=1pip EURUSD, augmente pour XAUUSD)
-input double ATR_VolatMax       = 3.0;     // Bloque si ATR > N x moyenne (news/spike)
-input int    CooldownMins       = 60;      // Pause en minutes apres une perte
-input int    GapProtectPips     = 500;     // Bloque si gap > N pips (week-end gap)
+input double ATR_VolatMax       = 1.0;     // Bloque si ATR > N x moyenne (desactive=1)
+input int    CooldownMins       = 0;       // Pause en minutes apres une perte (desactive=0)
+input int    GapProtectPips     = 1;       // Bloque si gap > N pips (desactive=1)
 
 //=== MAGIC & COMMENTAIRE ==========================================
 input int    MagicNumber        = 303030;
