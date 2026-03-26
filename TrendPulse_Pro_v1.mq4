@@ -40,7 +40,7 @@ input int    MaxConsecLosses    = 3;       // Pause si N pertes consecutives
 //=== SL / TP ======================================================
 input bool   UseFixedSLTP       = true;   // true = SL/TP fixes en pips | false = ATR dynamique
 input int    FixedSL_Pips       = 30;     // SL fixe en pips (ratio 1:3)
-input int    FixedTP_Pips       = 90;     // TP fixe en pips (ratio 1:3)
+input int    FixedTP_Pips       = 100;    // TP fixe en pips
 input double ATR_SL_Mult        = 1.5;    // SL = ATR x ce mult (si UseFixedSLTP=false)
 input double ATR_TP1_Mult       = 4.0;    // TP securite = ATR x ce mult (si UseFixedSLTP=false)
 input int    ATR_Period         = 14;      // Periode ATR
@@ -48,16 +48,16 @@ input int    ATR_Period         = 14;      // Periode ATR
 //=== TRAILING STOP ================================================
 // Trail independant du BE, du SL et du TP (son propre declencheur + sa propre distance)
 input bool   UseFixedTrail      = true;   // true = trail fixe en pips | false = ATR dynamique
-input int    FixedTrail_Pips    = 45;     // Distance trail en pips (regle independante)
-input double ATR_Trail_Mult     = 2.5;    // Trail = ATR x ce mult (si UseFixedTrail=false)
-input int    Trail_Trigger_Pips = 20;     // Profit min en pips pour activer le trailing
+input int    FixedTrail_Pips    = 15;     // Distance trail en pips (regle independante)
+input double ATR_Trail_Mult     = 0;      // Trail = ATR x ce mult (si UseFixedTrail=false)
+input int    Trail_Trigger_Pips = 0;      // Profit min en pips pour activer le trailing (0=immediat)
 
 //=== BREAK-EVEN ===================================================
 // BE independant du trail, du SL et du TP (son propre declencheur)
 // BE = ramene le SL exactement au prix d'entree (0 perte/gain)
 // C'est le trailing qui protege les profits au-dela
 input bool   UseBE              = true;    // Activer break-even automatique
-input int    BE_Trigger_Pips    = 15;      // Profit en pips pour activer BE
+input int    BE_Trigger_Pips    = 40;      // Profit en pips pour activer BE
 input int    BE_Buffer_Pips     = 0;       // SL = entree + N pips (0 = exactement au prix d'entree)
 
 //=== FILTRES TENDANCE ==============================================
