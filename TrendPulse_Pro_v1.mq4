@@ -69,9 +69,9 @@ input int    EMA_Slow           = 200;     // EMA lente (D1 biais)
 // ShortSlopeMultiplier SUPPRIME -> auto-detection (voir GetAutoTrendBias)
 
 //=== FILTRES MACD ================================================
-input int    MACD_Fast          = 6;       // MACD rapide
-input int    MACD_Slow          = 13;      // MACD lent
-input int    MACD_Signal        = 5;       // MACD signal
+input int    MACD_Fast          = 3;       // MACD rapide
+input int    MACD_Slow          = 6;       // MACD lent
+input int    MACD_Signal        = 3;       // MACD signal
 
 //=== SESSIONS (heures France / Paris) ============================
 input bool   UseSessionFilter   = false;   // Activer filtre sessions
